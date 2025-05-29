@@ -180,7 +180,7 @@ button:disabled {
   border-bottom: 2px solid rgba(101, 67, 33, 0.8);
 }
 
-/* Larger farming blocks */
+/* Larger farming blocks - FIXED FOR CLICKING */
 .farming-block {
   transition: all 0.3s ease;
   border: 3px solid rgba(101, 67, 33, 0.4);
@@ -189,6 +189,12 @@ button:disabled {
     rgba(101, 67, 33, 0.2),
     rgba(139, 69, 19, 0.3)
   );
+  pointer-events: auto !important;
+  cursor: crosshair;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 .farming-block.occupied {
@@ -559,7 +565,7 @@ button:focus {
   will-change: transform;
 }
 
-.auto-farm, .crop-container, .farming-block {
+.auto-farm, .crop-container {
   contain: layout style paint;
 }
 
@@ -594,8 +600,8 @@ img {
   user-drag: none;
 }
 
-/* Prevent highlighting of game elements */
-.game-element, .crop-sprite, .farming-block {
+/* Prevent highlighting of ONLY non-interactive game elements */
+.game-element, .crop-sprite {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
