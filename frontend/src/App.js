@@ -16,7 +16,8 @@ const CONFIG = {
     viewportWidth: 1200,
     farmingAreaStart: 200,
     farmingAreaEnd: 3800,
-    blockSize: 80 // Size of each farming block
+    blockSize: 80, // Size of each farming block
+    groundLevel: 400 // Y position of ground level
   },
   inventory: {
     hotbarSize: 5,
@@ -47,7 +48,7 @@ const CONFIG = {
       description: 'Simple vanilla Minecraft cactus farm',
       production: 1,
       minigame: 'mod_approval',
-      size: { width: 2, height: 2 }, // In blocks
+      size: { width: 2, height: 1 }, // Width in blocks, height always 1 for single row
       icon: '🏠'
     },
     {
@@ -57,7 +58,7 @@ const CONFIG = {
       description: 'Automated piston-based harvester',
       production: 5,
       minigame: 'cactus_lottery',
-      size: { width: 3, height: 2 },
+      size: { width: 3, height: 1 },
       icon: '🏭'
     },
     {
@@ -67,7 +68,7 @@ const CONFIG = {
       description: 'Magical essence-infused growing',
       production: 10,
       minigame: 'count_cactus',
-      size: { width: 3, height: 3 },
+      size: { width: 3, height: 1 },
       icon: '🔯'
     },
     {
@@ -77,7 +78,7 @@ const CONFIG = {
       description: 'High-tech automated harvesting',
       production: 20,
       minigame: 'tech_calibration',
-      size: { width: 4, height: 3 },
+      size: { width: 4, height: 1 },
       icon: '⚙️'
     },
     {
@@ -87,7 +88,7 @@ const CONFIG = {
       description: 'Year-round magical growing',
       production: 30,
       minigame: 'sprinkler_puzzle',
-      size: { width: 5, height: 4 },
+      size: { width: 5, height: 1 },
       icon: '🏛️'
     }
   ],
@@ -111,33 +112,35 @@ function App() {
   const [totalCactiHarvested, setTotalCactiHarvested] = useState(0);
   const [blameCount, setBlameCount] = useState(0);
   
-  // Inventory System
-  const [inventory, setInventory] = useState([
-    { ...CONFIG.items.wands[0], quantity: 1 }, // Start with basic wand
-    { ...CONFIG.items.hoes[0], quantity: 1 }, // Start with basic hoe
-    { ...CONFIG.items.seeds[0], quantity: 10 } // Start with seeds
-  ]);
-  const [hotbar, setHotbar] = useState(Array(CONFIG.inventory.hotbarSize).fill(null));
+  // Inventory System - Initialize with starting items in hotbar
+  const [inventory, setInventory] = useState([]);
+  const [hotbar, setHotbar] = useState(() => {
+    const initialHotbar = Array(CONFIG.inventory.hotbarSize).fill(null);
+    initialHotbar[0] = { ...CONFIG.items.seeds[0], quantity: 10 }; // Seeds in slot 0
+    initialHotbar[1] = { ...CONFIG.items.wands[0], quantity: 1 }; // Wooden wand in slot 1
+    initialHotbar[2] = { ...CONFIG.items.hoes[0], quantity: 1 }; // Wooden hoe in slot 2
+    return initialHotbar;
+  });
   const [selectedHotbarSlot, setSelectedHotbarSlot] = useState(0);
   const [draggedItem, setDraggedItem] = useState(null);
+  const [dragSource, setDragSource] = useState(null);
   
-  // World State
-  const [farmingGrid, setFarmingGrid] = useState(() => {
-    const grid = {};
+  // World State - Single horizontal row like Terraria
+  const [farmingBlocks, setFarmingBlocks] = useState(() => {
+    const blocks = {};
     const startBlock = Math.floor(CONFIG.world.farmingAreaStart / CONFIG.world.blockSize);
     const endBlock = Math.floor(CONFIG.world.farmingAreaEnd / CONFIG.world.blockSize);
     
+    // Single horizontal row at ground level
     for (let x = startBlock; x < endBlock; x++) {
-      for (let y = 0; y < 8; y++) { // 8 blocks high
-        grid[`${x},${y}`] = {
-          x, y,
-          occupied: false,
-          crop: null,
-          farm: null
-        };
-      }
+      blocks[x] = {
+        x,
+        occupied: false,
+        crop: null,
+        farm: null
+      };
     }
-    return grid;
+    return blocks;
   });
   
   const [autoFarms, setAutoFarms] = useState([]);
@@ -168,6 +171,11 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       keysRef.current[e.key] = true;
+      
+      // Number keys for hotbar selection
+      if (e.key >= '1' && e.key <= '5') {
+        setSelectedHotbarSlot(parseInt(e.key) - 1);
+      }
     };
     
     const handleKeyUp = (e) => {
@@ -194,19 +202,14 @@ function App() {
     };
   }, []);
 
-  // Get block coordinates from world position
-  const getBlockCoords = (worldX, worldY) => {
-    const blockX = Math.floor(worldX / CONFIG.world.blockSize);
-    const blockY = Math.floor((worldY - 200) / CONFIG.world.blockSize); // Offset for ground level
-    return { blockX, blockY };
+  // Get block coordinate from world X position
+  const getBlockX = (worldX) => {
+    return Math.floor(worldX / CONFIG.world.blockSize);
   };
 
-  // Get world position from block coordinates
-  const getWorldPosition = (blockX, blockY) => {
-    return {
-      x: blockX * CONFIG.world.blockSize,
-      y: 200 + blockY * CONFIG.world.blockSize
-    };
+  // Get world X position from block coordinate
+  const getWorldX = (blockX) => {
+    return blockX * CONFIG.world.blockSize;
   };
 
   // Handle world click for farming
@@ -215,15 +218,19 @@ function App() {
     const worldX = event.clientX - rect.left + scrollPosition;
     const worldY = event.clientY - rect.top;
     
+    // Check if clicking near ground level
+    if (Math.abs(worldY - CONFIG.world.groundLevel) > CONFIG.world.blockSize) {
+      return; // Not clicking on farming area
+    }
+    
     // Check if in farming area
     if (worldX < CONFIG.world.farmingAreaStart || worldX > CONFIG.world.farmingAreaEnd) {
       addNotification("⚠️ You can only farm in designated areas!", 'warning', 2000);
       return;
     }
     
-    const { blockX, blockY } = getBlockCoords(worldX, worldY);
-    const blockKey = `${blockX},${blockY}`;
-    const block = farmingGrid[blockKey];
+    const blockX = getBlockX(worldX);
+    const block = farmingBlocks[blockX];
     
     if (!block) return;
     
@@ -234,16 +241,16 @@ function App() {
       // Plant seed
       const newCrop = {
         id: Date.now(),
-        blockX, blockY,
+        blockX: blockX,
         growth: 0,
         maxGrowth: 100,
         type: 'cactus'
       };
       
       setManualCrops(prev => [...prev, newCrop]);
-      setFarmingGrid(prev => ({
+      setFarmingBlocks(prev => ({
         ...prev,
-        [blockKey]: { ...block, occupied: true, crop: newCrop.id }
+        [blockX]: { ...block, occupied: true, crop: newCrop.id }
       }));
       
       // Use seed
@@ -283,9 +290,9 @@ function App() {
         
         // Remove crop
         setManualCrops(prev => prev.filter(c => c.id !== crop.id));
-        setFarmingGrid(prev => ({
+        setFarmingBlocks(prev => ({
           ...prev,
-          [blockKey]: { ...block, occupied: false, crop: null }
+          [blockX]: { ...block, occupied: false, crop: null }
         }));
         
         addNotification(`+${sourceGained} Source`, 'source', 1500);
@@ -327,56 +334,93 @@ function App() {
     }
   };
 
-  // Drag and drop system
-  const handleDragStart = (item, source) => {
-    setDraggedItem({ item, source });
+  // Fixed Drag and drop system
+  const handleDragStart = (e, item, sourceType, sourceIndex = null) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedItem(item);
+    setDragSource({ type: sourceType, index: sourceIndex });
   };
 
-  const handleDrop = (targetSlot, targetType) => {
-    if (!draggedItem) return;
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, targetType, targetIndex = null) => {
+    e.preventDefault();
     
-    const { item, source: sourceType } = draggedItem;
+    if (!draggedItem || !dragSource) return;
     
-    if (targetType === 'hotbar') {
-      setHotbar(prev => {
-        const newHotbar = [...prev];
-        const oldItem = newHotbar[targetSlot];
-        
-        if (sourceType === 'hotbar') {
-          // Swap hotbar items
-          const sourceSlot = hotbar.findIndex(i => i?.id === item.id);
-          newHotbar[sourceSlot] = oldItem;
-        } else if (sourceType === 'inventory') {
-          // Move from inventory to hotbar
-          if (oldItem) {
-            // Add old hotbar item back to inventory
-            setInventory(prev => {
-              const existing = prev.find(i => i.id === oldItem.id);
+    if (targetType === 'hotbar' && targetIndex !== null) {
+      const currentHotbarItem = hotbar[targetIndex];
+      
+      if (dragSource.type === 'inventory') {
+        // Moving from inventory to hotbar
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          
+          // If hotbar slot has item, move it to inventory
+          if (currentHotbarItem) {
+            setInventory(prevInv => {
+              const existing = prevInv.find(i => i.id === currentHotbarItem.id);
               if (existing) {
-                return prev.map(i => 
-                  i.id === oldItem.id 
-                    ? { ...i, quantity: i.quantity + oldItem.quantity }
+                return prevInv.map(i => 
+                  i.id === currentHotbarItem.id 
+                    ? { ...i, quantity: i.quantity + currentHotbarItem.quantity }
                     : i
                 );
               } else {
-                return [...prev, oldItem];
+                return [...prevInv, currentHotbarItem];
               }
             });
           }
           
-          // Remove from inventory
-          setInventory(prev => prev.filter(i => i.id !== item.id));
-        }
+          newHotbar[targetIndex] = draggedItem;
+          return newHotbar;
+        });
         
-        newHotbar[targetSlot] = item;
-        return newHotbar;
-      });
+        // Remove from inventory
+        setInventory(prev => prev.filter(i => i.id !== draggedItem.id));
+        
+      } else if (dragSource.type === 'hotbar' && dragSource.index !== null) {
+        // Swapping hotbar items
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          newHotbar[dragSource.index] = currentHotbarItem;
+          newHotbar[targetIndex] = draggedItem;
+          return newHotbar;
+        });
+      }
+    } else if (targetType === 'inventory') {
+      if (dragSource.type === 'hotbar' && dragSource.index !== null) {
+        // Moving from hotbar to inventory
+        setInventory(prev => {
+          const existing = prev.find(i => i.id === draggedItem.id);
+          if (existing) {
+            return prev.map(i => 
+              i.id === draggedItem.id 
+                ? { ...i, quantity: i.quantity + draggedItem.quantity }
+                : i
+            );
+          } else {
+            return [...prev, draggedItem];
+          }
+        });
+        
+        // Remove from hotbar
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          newHotbar[dragSource.index] = null;
+          return newHotbar;
+        });
+      }
     }
     
     setDraggedItem(null);
+    setDragSource(null);
   };
 
-  // Minigames
+  // Minigames (keeping the same complex ones)
   const ModApprovalMinigame = ({ onComplete, onFail }) => {
     const [formData, setFormData] = useState({
       name: '',
@@ -513,7 +557,7 @@ function App() {
   };
 
   const CountCactusMinigame = ({ onComplete, onFail }) => {
-    const [phase, setPhase] = useState('memorize'); // memorize, answer
+    const [phase, setPhase] = useState('memorize');
     const [grid, setGrid] = useState([]);
     const [cactusCount, setCactusCount] = useState(0);
     const [timeLeft, setTimeLeft] = useState(3);
@@ -591,7 +635,7 @@ function App() {
     );
   };
 
-  // NPC Animation System
+  // NPC Animation System (keeping same)
   const spawnCultist = () => {
     setNpcAnimation({
       type: 'cultist',
@@ -629,7 +673,7 @@ function App() {
     return () => clearInterval(eventInterval);
   }, [totalCactiHarvested, autoFarms.length]);
 
-  // NPC Animation Controller
+  // NPC Animation Controller (keeping same)
   useEffect(() => {
     if (!npcAnimation) return;
     
@@ -755,17 +799,14 @@ function App() {
                 selectedHotbarSlot === index ? 'border-yellow-400 bg-yellow-900' : 'border-gray-600 bg-gray-700'
               }`}
               onClick={() => setSelectedHotbarSlot(index)}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDrop(index, 'hotbar');
-              }}
-              onDragOver={(e) => e.preventDefault()}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, 'hotbar', index)}
             >
               {item && (
                 <div 
                   className="relative"
                   draggable
-                  onDragStart={() => handleDragStart(item, 'hotbar')}
+                  onDragStart={(e) => handleDragStart(e, item, 'hotbar', index)}
                 >
                   <span>{item.icon}</span>
                   {item.quantity > 1 && (
@@ -779,7 +820,7 @@ function App() {
           ))}
         </div>
         <div className="text-center text-white text-xs pixelated mt-1">
-          Use arrow keys to scroll • Click to interact
+          Use arrow keys to scroll • 1-5 keys for hotbar • Click to interact
         </div>
       </div>
 
@@ -801,16 +842,22 @@ function App() {
           }}
           onClick={handleWorldClick}
         >
-          {/* Farming Grid Visualization */}
-          {Object.entries(farmingGrid).map(([key, block]) => {
-            const worldPos = getWorldPosition(block.x, block.y);
+          {/* Ground Line */}
+          <div 
+            className="absolute w-full h-1 bg-brown-600"
+            style={{ top: CONFIG.world.groundLevel }}
+          />
+
+          {/* Farming Blocks Visualization (Single Row) */}
+          {Object.entries(farmingBlocks).map(([blockX, block]) => {
+            const worldX = getWorldX(parseInt(blockX));
             return (
               <div
-                key={key}
-                className="absolute border border-green-300 border-opacity-30"
+                key={blockX}
+                className="absolute border border-green-300 border-opacity-50"
                 style={{
-                  left: worldPos.x,
-                  top: worldPos.y,
+                  left: worldX,
+                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
                   width: CONFIG.world.blockSize,
                   height: CONFIG.world.blockSize,
                   backgroundColor: block.occupied ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.1)'
@@ -821,16 +868,16 @@ function App() {
 
           {/* Manual Crops */}
           {manualCrops.map(crop => {
-            const worldPos = getWorldPosition(crop.blockX, crop.blockY);
-            const growthHeight = 20 + (crop.growth / 100) * 40;
+            const worldX = getWorldX(crop.blockX);
+            const growthHeight = 20 + (crop.growth / 100) * 50;
             
             return (
               <div
                 key={crop.id}
                 className="absolute flex items-end justify-center"
                 style={{
-                  left: worldPos.x,
-                  top: worldPos.y,
+                  left: worldX,
+                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
                   width: CONFIG.world.blockSize,
                   height: CONFIG.world.blockSize
                 }}
@@ -841,10 +888,7 @@ function App() {
                   }`}
                   style={{
                     width: '60px',
-                    height: `${growthHeight}px`,
-                    backgroundImage: crop.growth >= 100 ? 
-                      `url('https://images.unsplash.com/photo-1565200269395-27dab1adfb0c?w=60&h=80&fit=crop')` : 
-                      'none'
+                    height: `${growthHeight}px`
                   }}
                 >
                   <span className="text-2xl">
@@ -858,21 +902,21 @@ function App() {
           {/* Auto Farms */}
           {autoFarms.map(farm => {
             const farmType = CONFIG.farmTypes.find(ft => ft.id === farm.type);
-            const worldPos = getWorldPosition(farm.blockX, farm.blockY);
+            const worldX = getWorldX(farm.blockX);
             
             return (
               <div
                 key={farm.id}
                 className="absolute border-4 border-gray-600 bg-gray-300 rounded-lg shadow-lg flex items-center justify-center"
                 style={{
-                  left: worldPos.x,
-                  top: worldPos.y,
+                  left: worldX,
+                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
                   width: farmType.size.width * CONFIG.world.blockSize,
-                  height: farmType.size.height * CONFIG.world.blockSize
+                  height: CONFIG.world.blockSize
                 }}
               >
                 <div className="text-center">
-                  <div className="text-4xl mb-2">{farmType.icon}</div>
+                  <div className="text-3xl mb-1">{farmType.icon}</div>
                   <div className="text-xs font-bold pixelated">{farmType.name}</div>
                   <div className="text-xs">+{farmType.production}/2s</div>
                 </div>
@@ -896,22 +940,34 @@ function App() {
               </button>
             </div>
             
-            <div className="grid grid-cols-8 gap-2">
-              {inventory.map((item, index) => (
-                <div
-                  key={index}
-                  className="w-16 h-16 border-2 border-gray-400 rounded bg-gray-100 flex items-center justify-center relative cursor-pointer hover:bg-gray-200"
-                  draggable
-                  onDragStart={() => handleDragStart(item, 'inventory')}
-                >
-                  <span className="text-2xl">{item.icon}</span>
-                  {item.quantity > 1 && (
-                    <span className="absolute -bottom-1 -right-1 text-xs bg-blue-500 text-white rounded px-1">
-                      {item.quantity}
-                    </span>
-                  )}
-                </div>
-              ))}
+            <div 
+              className="grid grid-cols-8 gap-2"
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, 'inventory')}
+            >
+              {Array.from({ length: 24 }, (_, index) => {
+                const item = inventory[index];
+                return (
+                  <div
+                    key={index}
+                    className="w-16 h-16 border-2 border-gray-400 rounded bg-gray-100 flex items-center justify-center relative cursor-pointer hover:bg-gray-200"
+                  >
+                    {item && (
+                      <div
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item, 'inventory')}
+                      >
+                        <span className="text-2xl">{item.icon}</span>
+                        {item.quantity > 1 && (
+                          <span className="absolute -bottom-1 -right-1 text-xs bg-blue-500 text-white rounded px-1">
+                            {item.quantity}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1021,7 +1077,7 @@ function App() {
                       <div className="text-3xl mb-2">{farmType.icon}</div>
                       <div className="font-bold">{farmType.name}</div>
                       <div className="text-xs">{farmType.description}</div>
-                      <div className="text-xs mt-1">Size: {farmType.size.width}x{farmType.size.height}</div>
+                      <div className="text-xs mt-1">Size: {farmType.size.width} blocks</div>
                       <div className="text-xs font-bold text-blue-600">💰 {farmType.cost} Source</div>
                     </div>
                   </button>
