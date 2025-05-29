@@ -29,13 +29,14 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
 }
 
-/* Animations */
+/* Enhanced animations */
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(-10px);
   }
   to {
     opacity: 1;
@@ -47,95 +48,201 @@ button:disabled {
   animation: fade-in 0.3s ease-out;
 }
 
-/* Cactus emoji sizing for better display */
-.text-8xl {
-  line-height: 1;
+@keyframes crashFlash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
-/* Lag effect styling */
-@keyframes lag-glitch {
-  0% { transform: translateX(0); }
-  10% { transform: translateX(-2px); }
-  20% { transform: translateX(2px); }
-  30% { transform: translateX(-1px); }
-  40% { transform: translateX(1px); }
-  50% { transform: translateX(-1px); }
-  60% { transform: translateX(1px); }
-  70% { transform: translateX(-2px); }
-  80% { transform: translateX(2px); }
-  90% { transform: translateX(-1px); }
-  100% { transform: translateX(0); }
+@keyframes tps-warning {
+  0%, 100% { color: #ef4444; }
+  50% { color: #fbbf24; }
 }
 
-.lag-effect {
-  animation: lag-glitch 0.1s infinite;
+/* Farm grid styling */
+.farm-plot {
+  border: 2px solid #8b5a2b;
+  border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h8v8H0z' fill='%23654321'/%3E%3C/svg%3E") 2;
 }
 
-/* Custom scrollbar for Discord chat */
-::-webkit-scrollbar {
-  width: 8px;
+.farm-plot:hover {
+  transform: scale(1.1);
+  z-index: 10;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
 }
 
-::-webkit-scrollbar-track {
-  background: #2f3136;
-  border-radius: 4px;
+/* Tool selection highlights */
+.tool-selected {
+  animation: tool-glow 1s ease-in-out infinite;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #5865f2;
-  border-radius: 4px;
+@keyframes tool-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(147, 51, 234, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(147, 51, 234, 0.8); }
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #4752c4;
+/* Notification styling */
+.notification-blame {
+  border-left: 4px solid #dc2626;
+  background: linear-gradient(90deg, #dc2626, #b91c1c);
 }
 
-/* Pixel border effect */
-.pixelated-border {
-  border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h100v100H0z' fill='none' stroke='%23000' stroke-width='4'/%3E%3C/svg%3E") 4;
+.notification-mod {
+  border-left: 4px solid #2563eb;
+  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+}
+
+.notification-cultist {
+  border-left: 4px solid #7c3aed;
+  background: linear-gradient(90deg, #7c3aed, #6d28d9);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+}
+
+.notification-achievement {
+  border-left: 4px solid #eab308;
+  background: linear-gradient(90deg, #eab308, #ca8a04);
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+}
+
+.notification-source {
+  border-left: 4px solid #16a34a;
+  background: linear-gradient(90deg, #16a34a, #15803d);
+}
+
+/* TPS warning effects */
+.tps-critical {
+  animation: tps-warning 0.5s ease-in-out infinite;
+  text-shadow: 0 0 10px #ef4444;
+}
+
+/* Growth progress visualization */
+.growth-indicator {
+  position: relative;
+  overflow: hidden;
+}
+
+.growth-indicator::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: var(--growth-percent, 0%);
+  width: 100%;
+  background: linear-gradient(to top, #22c55e, #16a34a);
+  transition: height 0.3s ease;
+}
+
+/* Cultist entrance animation */
+.cultist-entrance {
+  animation: cultist-float 2s ease-in-out infinite;
+}
+
+@keyframes cultist-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Mod inspector animation */
+.mod-inspector {
+  animation: mod-hover 3s ease-in-out infinite;
+}
+
+@keyframes mod-hover {
+  0%, 100% { transform: translateX(0px); }
+  25% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+}
+
+/* Source particle effect */
+.source-gain {
+  animation: source-float 1s ease-out forwards;
+}
+
+@keyframes source-float {
+  0% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) scale(1.5);
+  }
+}
+
+/* Custom colors for minecraft-like palette */
+.bg-brown-100 { background-color: #f5deb3; }
+.bg-brown-200 { background-color: #deb887; }
+.bg-brown-500 { background-color: #8b4513; }
+.border-brown-400 { border-color: #cd853f; }
+.border-brown-600 { border-color: #a0522d; }
+.border-brown-700 { border-color: #8b4513; }
+
+.bg-gold-500 { background-color: #ffd700; }
+.bg-gold-600 { background-color: #ffcc00; }
+.border-gold-700 { border-color: #b8860b; }
+
+/* Plot state indicators */
+.plot-empty {
+  background: radial-gradient(circle, #f5deb3, #deb887);
+  border: 2px dashed #cd853f;
+}
+
+.plot-planted {
+  background: radial-gradient(circle, #90ee90, #7cfc00);
+  border: 2px solid #228b22;
+}
+
+.plot-growing {
+  background: radial-gradient(circle, #98fb98, #90ee90);
+  border: 2px solid #32cd32;
+  animation: growth-pulse 2s ease-in-out infinite;
+}
+
+.plot-harvestable {
+  background: radial-gradient(circle, #00ff00, #32cd32);
+  border: 2px solid #008000;
+  animation: harvest-ready 1s ease-in-out infinite;
+  box-shadow: 0 0 10px #00ff00;
+}
+
+@keyframes growth-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes harvest-ready {
+  0%, 100% { box-shadow: 0 0 10px #00ff00; }
+  50% { box-shadow: 0 0 20px #00ff00, 0 0 30px #32cd32; }
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .pixelated {
-    font-size: 0.8em;
+    font-size: 0.7em;
   }
   
-  .text-6xl {
-    font-size: 2.5rem;
+  .text-5xl {
+    font-size: 2rem;
   }
   
-  .text-8xl {
-    font-size: 3rem;
+  .farm-plot {
+    width: 1.5rem;
+    height: 1.5rem;
   }
 }
 
-/* Performance indicator */
-.performance-bad {
-  filter: hue-rotate(0deg) contrast(1.2);
-  animation: lag-glitch 0.2s infinite;
+/* Tool drag effect */
+.tool-dragging {
+  cursor: crosshair;
 }
 
-/* Easter egg styles */
-.blame-highlight {
-  background: linear-gradient(45deg, #ff6b6b, #ffd93d);
-  background-size: 400% 400%;
-  animation: gradient-shift 2s ease infinite;
+.plot-highlight {
+  background: rgba(255, 255, 0, 0.3) !important;
+  border-color: #ffff00 !important;
+  animation: highlight-pulse 0.3s ease-in-out;
 }
 
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* Minecraft block texture effect */
-.minecraft-block {
-  background-image: 
-    linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%), 
-    linear-gradient(-45deg, rgba(0,0,0,0.1) 25%, transparent 25%), 
-    linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.1) 75%), 
-    linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.1) 75%);
-  background-size: 8px 8px;
-  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+@keyframes highlight-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
