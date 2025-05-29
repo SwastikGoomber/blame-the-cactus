@@ -16,8 +16,12 @@ const CONFIG = {
     viewportWidth: 1200,
     farmingAreaStart: 200,
     farmingAreaEnd: 3800,
-    blockSize: 80, // Size of each farming block
-    groundLevel: 400 // Y position of ground level
+    blockSize: 120, // Increased chunk size
+    layout: {
+      groundHeight: 30, // Bottom 30% for ground
+      farmingHeight: 30, // Middle 30% for farming
+      skyHeight: 40 // Top 40% for sky
+    }
   },
   inventory: {
     hotbarSize: 5,
@@ -48,7 +52,7 @@ const CONFIG = {
       description: 'Simple vanilla Minecraft cactus farm',
       production: 1,
       minigame: 'mod_approval',
-      size: { width: 2, height: 1 }, // Width in blocks, height always 1 for single row
+      size: { width: 2, height: 1 },
       icon: '🏠'
     },
     {
@@ -112,26 +116,23 @@ function App() {
   const [totalCactiHarvested, setTotalCactiHarvested] = useState(0);
   const [blameCount, setBlameCount] = useState(0);
   
-  // Inventory System - Initialize with starting items in hotbar
+  // Inventory System
   const [inventory, setInventory] = useState([]);
   const [hotbar, setHotbar] = useState(() => {
     const initialHotbar = Array(CONFIG.inventory.hotbarSize).fill(null);
-    initialHotbar[0] = { ...CONFIG.items.seeds[0], quantity: 10 }; // Seeds in slot 0
-    initialHotbar[1] = { ...CONFIG.items.wands[0], quantity: 1 }; // Wooden wand in slot 1
-    initialHotbar[2] = { ...CONFIG.items.hoes[0], quantity: 1 }; // Wooden hoe in slot 2
+    initialHotbar[0] = { ...CONFIG.items.seeds[0], quantity: 10 };
+    initialHotbar[1] = { ...CONFIG.items.wands[0], quantity: 1 };
+    initialHotbar[2] = { ...CONFIG.items.hoes[0], quantity: 1 };
     return initialHotbar;
   });
   const [selectedHotbarSlot, setSelectedHotbarSlot] = useState(0);
-  const [draggedItem, setDraggedItem] = useState(null);
-  const [dragSource, setDragSource] = useState(null);
   
-  // World State - Single horizontal row like Terraria
+  // World State
   const [farmingBlocks, setFarmingBlocks] = useState(() => {
     const blocks = {};
     const startBlock = Math.floor(CONFIG.world.farmingAreaStart / CONFIG.world.blockSize);
     const endBlock = Math.floor(CONFIG.world.farmingAreaEnd / CONFIG.world.blockSize);
     
-    // Single horizontal row at ground level
     for (let x = startBlock; x < endBlock; x++) {
       blocks[x] = {
         x,
@@ -152,11 +153,29 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [activeMinigame, setActiveMinigame] = useState(null);
   const [npcAnimation, setNpcAnimation] = useState(null);
-  const [placingFarm, setPlacingFarm] = useState(null);
   
   // Refs
   const gameWorldRef = useRef(null);
+  const inventoryRef = useRef(null);
+  const shopRef = useRef(null);
   const keysRef = useRef({});
+
+  // Layout calculations
+  const getLayoutPositions = () => {
+    const viewportHeight = window.innerHeight;
+    const headerHeight = 64; // Header height
+    const hotbarHeight = 100; // Hotbar area height
+    const gameHeight = viewportHeight - headerHeight - hotbarHeight;
+    
+    return {
+      skyTop: headerHeight,
+      skyHeight: gameHeight * (CONFIG.world.layout.skyHeight / 100),
+      farmingTop: headerHeight + gameHeight * (CONFIG.world.layout.skyHeight / 100),
+      farmingHeight: gameHeight * (CONFIG.world.layout.farmingHeight / 100),
+      groundTop: headerHeight + gameHeight * ((CONFIG.world.layout.skyHeight + CONFIG.world.layout.farmingHeight) / 100),
+      groundHeight: gameHeight * (CONFIG.world.layout.groundHeight / 100)
+    };
+  };
 
   // Notification system
   const addNotification = useCallback((message, type = 'info', duration = 3000) => {
@@ -167,6 +186,23 @@ function App() {
     }, duration);
   }, []);
 
+  // Click outside to close modals
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showInventory && inventoryRef.current && !inventoryRef.current.contains(event.target)) {
+        setShowInventory(false);
+      }
+      if (showShop && shopRef.current && !shopRef.current.contains(event.target)) {
+        setShowShop(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showInventory, showShop]);
+
   // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -175,6 +211,12 @@ function App() {
       // Number keys for hotbar selection
       if (e.key >= '1' && e.key <= '5') {
         setSelectedHotbarSlot(parseInt(e.key) - 1);
+      }
+      
+      // ESC to close modals
+      if (e.key === 'Escape') {
+        setShowInventory(false);
+        setShowShop(false);
       }
     };
     
@@ -218,8 +260,10 @@ function App() {
     const worldX = event.clientX - rect.left + scrollPosition;
     const worldY = event.clientY - rect.top;
     
-    // Check if clicking near ground level
-    if (Math.abs(worldY - CONFIG.world.groundLevel) > CONFIG.world.blockSize) {
+    const layout = getLayoutPositions();
+    
+    // Check if clicking in farming area
+    if (worldY < layout.farmingTop || worldY > layout.farmingTop + layout.farmingHeight) {
       return; // Not clicking on farming area
     }
     
@@ -334,11 +378,14 @@ function App() {
     }
   };
 
-  // Fixed Drag and drop system
-  const handleDragStart = (e, item, sourceType, sourceIndex = null) => {
+  // Fixed Drag and Drop System
+  const handleDragStart = (e, item, sourceType, sourceIndex) => {
     e.dataTransfer.effectAllowed = 'move';
-    setDraggedItem(item);
-    setDragSource({ type: sourceType, index: sourceIndex });
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      item,
+      sourceType,
+      sourceIndex
+    }));
   };
 
   const handleDragOver = (e) => {
@@ -346,81 +393,84 @@ function App() {
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = (e, targetType, targetIndex = null) => {
+  const handleDrop = (e, targetType, targetIndex) => {
     e.preventDefault();
+    e.stopPropagation();
     
-    if (!draggedItem || !dragSource) return;
-    
-    if (targetType === 'hotbar' && targetIndex !== null) {
-      const currentHotbarItem = hotbar[targetIndex];
+    try {
+      const dragData = JSON.parse(e.dataTransfer.getData('application/json'));
+      const { item, sourceType, sourceIndex } = dragData;
       
-      if (dragSource.type === 'inventory') {
-        // Moving from inventory to hotbar
-        setHotbar(prev => {
-          const newHotbar = [...prev];
+      if (targetType === 'hotbar') {
+        const currentHotbarItem = hotbar[targetIndex];
+        
+        if (sourceType === 'inventory') {
+          // Moving from inventory to hotbar
+          setHotbar(prev => {
+            const newHotbar = [...prev];
+            
+            // If hotbar slot has item, move it to inventory
+            if (currentHotbarItem) {
+              setInventory(prevInv => {
+                const existing = prevInv.find(i => i.id === currentHotbarItem.id);
+                if (existing) {
+                  return prevInv.map(i => 
+                    i.id === currentHotbarItem.id 
+                      ? { ...i, quantity: i.quantity + currentHotbarItem.quantity }
+                      : i
+                  );
+                } else {
+                  return [...prevInv, currentHotbarItem];
+                }
+              });
+            }
+            
+            newHotbar[targetIndex] = item;
+            return newHotbar;
+          });
           
-          // If hotbar slot has item, move it to inventory
-          if (currentHotbarItem) {
-            setInventory(prevInv => {
-              const existing = prevInv.find(i => i.id === currentHotbarItem.id);
-              if (existing) {
-                return prevInv.map(i => 
-                  i.id === currentHotbarItem.id 
-                    ? { ...i, quantity: i.quantity + currentHotbarItem.quantity }
-                    : i
-                );
-              } else {
-                return [...prevInv, currentHotbarItem];
-              }
-            });
-          }
+          // Remove from inventory
+          setInventory(prev => prev.filter(i => i.id !== item.id));
           
-          newHotbar[targetIndex] = draggedItem;
-          return newHotbar;
-        });
-        
-        // Remove from inventory
-        setInventory(prev => prev.filter(i => i.id !== draggedItem.id));
-        
-      } else if (dragSource.type === 'hotbar' && dragSource.index !== null) {
-        // Swapping hotbar items
-        setHotbar(prev => {
-          const newHotbar = [...prev];
-          newHotbar[dragSource.index] = currentHotbarItem;
-          newHotbar[targetIndex] = draggedItem;
-          return newHotbar;
-        });
+        } else if (sourceType === 'hotbar') {
+          // Swapping hotbar items
+          setHotbar(prev => {
+            const newHotbar = [...prev];
+            newHotbar[sourceIndex] = currentHotbarItem;
+            newHotbar[targetIndex] = item;
+            return newHotbar;
+          });
+        }
+      } else if (targetType === 'inventory') {
+        if (sourceType === 'hotbar') {
+          // Moving from hotbar to inventory
+          setInventory(prev => {
+            const existing = prev.find(i => i.id === item.id);
+            if (existing) {
+              return prev.map(i => 
+                i.id === item.id 
+                  ? { ...i, quantity: i.quantity + item.quantity }
+                  : i
+              );
+            } else {
+              return [...prev, item];
+            }
+          });
+          
+          // Remove from hotbar
+          setHotbar(prev => {
+            const newHotbar = [...prev];
+            newHotbar[sourceIndex] = null;
+            return newHotbar;
+          });
+        }
       }
-    } else if (targetType === 'inventory') {
-      if (dragSource.type === 'hotbar' && dragSource.index !== null) {
-        // Moving from hotbar to inventory
-        setInventory(prev => {
-          const existing = prev.find(i => i.id === draggedItem.id);
-          if (existing) {
-            return prev.map(i => 
-              i.id === draggedItem.id 
-                ? { ...i, quantity: i.quantity + draggedItem.quantity }
-                : i
-            );
-          } else {
-            return [...prev, draggedItem];
-          }
-        });
-        
-        // Remove from hotbar
-        setHotbar(prev => {
-          const newHotbar = [...prev];
-          newHotbar[dragSource.index] = null;
-          return newHotbar;
-        });
-      }
+    } catch (error) {
+      console.error('Drag and drop error:', error);
     }
-    
-    setDraggedItem(null);
-    setDragSource(null);
   };
 
-  // Minigames (keeping the same complex ones)
+  // Minigames
   const ModApprovalMinigame = ({ onComplete, onFail }) => {
     const [formData, setFormData] = useState({
       name: '',
@@ -511,130 +561,6 @@ function App() {
     );
   };
 
-  const CactusLotteryMinigame = ({ onComplete, onFail }) => {
-    const [attempts, setAttempts] = useState(0);
-    const [result, setResult] = useState('');
-    const [spinning, setSpinning] = useState(false);
-    
-    const spin = () => {
-      setSpinning(true);
-      setResult('');
-      
-      setTimeout(() => {
-        const newAttempts = attempts + 1;
-        setAttempts(newAttempts);
-        
-        // Rigged to succeed after 3-6 attempts
-        const shouldWin = newAttempts >= 3 && (newAttempts >= 6 || Math.random() < 0.4);
-        
-        if (shouldWin) {
-          setResult('🌵 CACTUS! YOU WIN!');
-          setTimeout(() => onComplete(), 1000);
-        } else {
-          const losers = ['🍎', '🍌', '🍇', '🥕', '🌽'];
-          setResult(`${losers[Math.floor(Math.random() * losers.length)]} Try again!`);
-        }
-        setSpinning(false);
-      }, 2000);
-    };
-    
-    return (
-      <div className="bg-purple-50 p-6 rounded border-4 border-purple-600 max-w-md text-center">
-        <h3 className="text-lg font-bold mb-4 pixelated">🎰 Cactus Lottery</h3>
-        <div className="text-4xl mb-4 h-16 flex items-center justify-center">
-          {spinning ? '🎲' : result || '❓'}
-        </div>
-        <p className="text-sm mb-4">Get a cactus to win! (Attempts: {attempts})</p>
-        <button 
-          onClick={spin}
-          disabled={spinning}
-          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-        >
-          {spinning ? 'Spinning...' : 'SPIN!'}
-        </button>
-      </div>
-    );
-  };
-
-  const CountCactusMinigame = ({ onComplete, onFail }) => {
-    const [phase, setPhase] = useState('memorize');
-    const [grid, setGrid] = useState([]);
-    const [cactusCount, setCactusCount] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(3);
-    const [userAnswer, setUserAnswer] = useState('');
-    
-    useEffect(() => {
-      // Generate grid
-      const newGrid = Array(81).fill(null).map(() => {
-        return Math.random() < 0.3 ? '🌵' : ['🌱', '🌿', '🍄', '🪨', '🔥'][Math.floor(Math.random() * 5)];
-      });
-      const count = newGrid.filter(item => item === '🌵').length;
-      setGrid(newGrid);
-      setCactusCount(count);
-      
-      // Timer
-      const timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            setPhase('answer');
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      
-      return () => clearInterval(timer);
-    }, []);
-    
-    const checkAnswer = () => {
-      if (parseInt(userAnswer) === cactusCount) {
-        onComplete();
-      } else {
-        addNotification(`❌ Wrong! There were ${cactusCount} cacti`, 'error', 3000);
-        onFail();
-      }
-    };
-    
-    return (
-      <div className="bg-green-50 p-6 rounded border-4 border-green-600 max-w-lg">
-        <h3 className="text-lg font-bold mb-4 pixelated">🧮 Count the Cacti</h3>
-        
-        {phase === 'memorize' ? (
-          <>
-            <p className="text-center mb-2">Memorize the cacti! Time: {timeLeft}s</p>
-            <div className="grid grid-cols-9 gap-1 w-full max-w-md mx-auto">
-              {grid.map((item, index) => (
-                <div key={index} className="w-6 h-6 text-sm text-center">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-center mb-4">How many cacti did you see?</p>
-            <div className="flex items-center justify-center space-x-2">
-              <input 
-                type="number" 
-                value={userAnswer}
-                onChange={(e) => setUserAnswer(e.target.value)}
-                className="border-2 border-gray-400 rounded px-2 py-1 w-20 text-center"
-                placeholder="?"
-              />
-              <button 
-                onClick={checkAnswer}
-                className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded"
-              >
-                Submit
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
   // NPC Animation System (keeping same)
   const spawnCultist = () => {
     setNpcAnimation({
@@ -647,67 +573,22 @@ function App() {
     addNotification("🌵 A mysterious cult approaches your farm... 🌵", 'cultist', 4000);
   };
 
-  const spawnModerator = () => {
-    const mod = CONFIG.mods[Math.floor(Math.random() * CONFIG.mods.length)];
-    setNpcAnimation({
-      type: 'moderator',
-      phase: 'entering',
-      direction: 'left',
-      position: 0,
-      character: mod,
-      message: "Let me check your farm setup... 🤔"
-    });
-  };
-
   // Random events
   useEffect(() => {
     const eventInterval = setInterval(() => {
       if (Math.random() < 0.005 && totalCactiHarvested > 20) {
         spawnCultist();
       }
-      if (Math.random() < 0.003 && autoFarms.length > 0) {
-        spawnModerator();
-      }
     }, 1000);
 
     return () => clearInterval(eventInterval);
-  }, [totalCactiHarvested, autoFarms.length]);
+  }, [totalCactiHarvested]);
 
-  // NPC Animation Controller (keeping same)
-  useEffect(() => {
-    if (!npcAnimation) return;
-    
-    const animationInterval = setInterval(() => {
-      setNpcAnimation(prev => {
-        if (!prev) return null;
-        
-        if (prev.phase === 'entering') {
-          if (prev.position >= 50) {
-            return { ...prev, phase: 'action', position: 50 };
-          }
-          return { ...prev, position: prev.position + 2 };
-        } else if (prev.phase === 'action') {
-          setTimeout(() => {
-            setNpcAnimation(prev => prev ? { ...prev, phase: 'leaving' } : null);
-          }, 3000);
-          return prev;
-        } else if (prev.phase === 'leaving') {
-          if (prev.position <= -20 || prev.position >= 120) {
-            return null;
-          }
-          const direction = prev.direction === 'left' ? -2 : 2;
-          return { ...prev, position: prev.position + direction };
-        }
-        
-        return prev;
-      });
-    }, 100);
-    
-    return () => clearInterval(animationInterval);
-  }, [npcAnimation]);
+  // Layout positions
+  const layout = getLayoutPositions();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-300 to-yellow-200 overflow-hidden">
+    <div className="min-h-screen overflow-hidden no-select">
       {/* Notifications */}
       <div className="fixed top-4 right-4 z-40 space-y-2">
         {notifications.map(notif => (
@@ -729,41 +610,29 @@ function App() {
       {npcAnimation && (
         <div className="fixed inset-0 pointer-events-none z-30">
           <div 
-            className="absolute bottom-20 transition-all duration-100"
+            className="absolute transition-all duration-100"
             style={{ 
               left: `${npcAnimation.position}%`,
+              bottom: '120px',
               transform: npcAnimation.direction === 'right' ? 'scaleX(-1)' : 'scaleX(1)'
             }}
           >
-            {npcAnimation.type === 'cultist' ? (
-              <div className="text-center">
-                <div className="text-6xl animate-bounce">
-                  {npcAnimation.phase === 'action' ? '🙇‍♂️' : '🧙‍♂️'}
-                </div>
-                {npcAnimation.phase === 'action' && (
-                  <div className="bg-purple-600 text-white p-2 rounded-lg mt-2 text-xs pixelated">
-                    "The great cactus brings wisdom!" 🌵
-                  </div>
-                )}
+            <div className="text-center">
+              <div className="text-6xl animate-bounce">
+                {npcAnimation.phase === 'action' ? '🙇‍♂️' : '🧙‍♂️'}
               </div>
-            ) : (
-              <div className="text-center">
-                <div className="text-6xl">
-                  {npcAnimation.character?.avatar}
+              {npcAnimation.phase === 'action' && (
+                <div className="bg-purple-600 text-white p-2 rounded-lg mt-2 text-xs pixelated">
+                  "The great cactus brings wisdom!" 🌵
                 </div>
-                {npcAnimation.phase === 'action' && (
-                  <div className="bg-blue-600 text-white p-2 rounded-lg mt-2 text-xs pixelated">
-                    {npcAnimation.message}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Header UI */}
-      <div className="fixed top-0 left-0 right-0 bg-gray-800 text-white p-3 z-30">
+      <div className="fixed top-0 left-0 right-0 bg-gray-800 text-white p-3 z-30 h-16">
         <div className="flex justify-between items-center pixelated">
           <div className="flex space-x-6 text-sm">
             <span>💰 Source: {Math.floor(source)}</span>
@@ -789,23 +658,147 @@ function App() {
         </div>
       </div>
 
+      {/* Game World */}
+      <div className="fixed top-16 left-0 right-0 bottom-20">
+        {/* Sky Layer (Top 40%) */}
+        <div 
+          className="absolute w-full"
+          style={{
+            top: 0,
+            height: `${layout.skyHeight}px`,
+            backgroundImage: `url('https://images.unsplash.com/photo-1506260408121-e353d10b87c7?w=1200&h=400&fit=crop')`,
+            backgroundSize: 'cover',
+            backgroundPosition: `${-scrollPosition * 0.2}px center`
+          }}
+        />
+
+        {/* Farming Layer (Middle 30%) */}
+        <div 
+          ref={gameWorldRef}
+          className="absolute w-full cursor-crosshair"
+          style={{
+            top: `${layout.farmingTop - 64}px`,
+            height: `${layout.farmingHeight}px`,
+            backgroundColor: 'rgba(101, 67, 33, 0.3)'
+          }}
+          onClick={handleWorldClick}
+        >
+          <div 
+            className="absolute inset-0"
+            style={{
+              width: CONFIG.world.width,
+              transform: `translateX(-${scrollPosition}px)`
+            }}
+          >
+            {/* Farming Blocks Visualization */}
+            {Object.entries(farmingBlocks).map(([blockX, block]) => {
+              const worldX = getWorldX(parseInt(blockX));
+              return (
+                <div
+                  key={blockX}
+                  className="absolute border-2 border-brown-400 border-opacity-50"
+                  style={{
+                    left: worldX,
+                    top: 0,
+                    width: CONFIG.world.blockSize,
+                    height: layout.farmingHeight,
+                    backgroundColor: block.occupied ? 'rgba(101, 67, 33, 0.4)' : 'rgba(101, 67, 33, 0.2)'
+                  }}
+                />
+              );
+            })}
+
+            {/* Manual Crops */}
+            {manualCrops.map(crop => {
+              const worldX = getWorldX(crop.blockX);
+              const growthHeight = 30 + (crop.growth / 100) * 80;
+              
+              return (
+                <div
+                  key={crop.id}
+                  className="absolute flex items-end justify-center"
+                  style={{
+                    left: worldX,
+                    top: 0,
+                    width: CONFIG.world.blockSize,
+                    height: layout.farmingHeight
+                  }}
+                >
+                  <div 
+                    className={`bg-green-500 border-2 border-green-700 rounded-t-lg transition-all duration-300 flex items-center justify-center ${
+                      crop.growth >= 100 ? 'animate-pulse shadow-lg shadow-green-400' : ''
+                    }`}
+                    style={{
+                      width: '80px',
+                      height: `${growthHeight}px`
+                    }}
+                  >
+                    <span className="text-3xl">
+                      {crop.growth >= 100 ? '🌵' : crop.growth >= 50 ? '🌱' : '🟫'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Auto Farms */}
+            {autoFarms.map(farm => {
+              const farmType = CONFIG.farmTypes.find(ft => ft.id === farm.type);
+              const worldX = getWorldX(farm.blockX);
+              
+              return (
+                <div
+                  key={farm.id}
+                  className="absolute border-4 border-gray-600 bg-gray-300 rounded-lg shadow-lg flex items-center justify-center"
+                  style={{
+                    left: worldX,
+                    top: 0,
+                    width: farmType.size.width * CONFIG.world.blockSize,
+                    height: layout.farmingHeight
+                  }}
+                >
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">{farmType.icon}</div>
+                    <div className="text-xs font-bold pixelated">{farmType.name}</div>
+                    <div className="text-xs">+{farmType.production}/2s</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Ground Layer (Bottom 30%) */}
+        <div 
+          className="absolute w-full"
+          style={{
+            top: `${layout.groundTop - 64}px`,
+            height: `${layout.groundHeight}px`,
+            backgroundImage: `url('https://images.unsplash.com/photo-1542639492-23184001faed?w=1200&h=300&fit=crop')`,
+            backgroundSize: 'cover',
+            backgroundPosition: `${-scrollPosition * 0.5}px center`
+          }}
+        />
+      </div>
+
       {/* Hotbar */}
       <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-30">
         <div className="flex space-x-1 bg-gray-800 p-2 rounded-lg">
           {hotbar.map((item, index) => (
             <div
               key={index}
-              className={`w-12 h-12 border-2 rounded cursor-pointer flex items-center justify-center text-lg ${
+              className={`w-14 h-14 border-2 rounded cursor-pointer flex items-center justify-center text-lg relative ${
                 selectedHotbarSlot === index ? 'border-yellow-400 bg-yellow-900' : 'border-gray-600 bg-gray-700'
-              }`}
+              } ${showInventory ? 'opacity-50' : ''}`}
               onClick={() => setSelectedHotbarSlot(index)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, 'hotbar', index)}
             >
+              <span className="absolute -top-2 -left-1 text-xs text-gray-400">{index + 1}</span>
               {item && (
                 <div 
                   className="relative"
-                  draggable
+                  draggable={!showInventory}
                   onDragStart={(e) => handleDragStart(e, item, 'hotbar', index)}
                 >
                   <span>{item.icon}</span>
@@ -824,112 +817,10 @@ function App() {
         </div>
       </div>
 
-      {/* Game World */}
-      <div 
-        className="fixed top-16 left-0 right-0 bottom-20 overflow-hidden cursor-crosshair"
-        style={{
-          backgroundImage: `url('https://images.unsplash.com/photo-1598639461728-809b292f14b9?w=1200&h=600&fit=crop')`,
-          backgroundSize: 'cover',
-          backgroundPosition: `${-scrollPosition * 0.3}px center`
-        }}
-      >
-        <div 
-          ref={gameWorldRef}
-          className="absolute inset-0"
-          style={{
-            width: CONFIG.world.width,
-            transform: `translateX(-${scrollPosition}px)`
-          }}
-          onClick={handleWorldClick}
-        >
-          {/* Ground Line */}
-          <div 
-            className="absolute w-full h-1 bg-brown-600"
-            style={{ top: CONFIG.world.groundLevel }}
-          />
-
-          {/* Farming Blocks Visualization (Single Row) */}
-          {Object.entries(farmingBlocks).map(([blockX, block]) => {
-            const worldX = getWorldX(parseInt(blockX));
-            return (
-              <div
-                key={blockX}
-                className="absolute border border-green-300 border-opacity-50"
-                style={{
-                  left: worldX,
-                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
-                  width: CONFIG.world.blockSize,
-                  height: CONFIG.world.blockSize,
-                  backgroundColor: block.occupied ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.1)'
-                }}
-              />
-            );
-          })}
-
-          {/* Manual Crops */}
-          {manualCrops.map(crop => {
-            const worldX = getWorldX(crop.blockX);
-            const growthHeight = 20 + (crop.growth / 100) * 50;
-            
-            return (
-              <div
-                key={crop.id}
-                className="absolute flex items-end justify-center"
-                style={{
-                  left: worldX,
-                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
-                  width: CONFIG.world.blockSize,
-                  height: CONFIG.world.blockSize
-                }}
-              >
-                <div 
-                  className={`bg-green-500 border-2 border-green-700 rounded-t-lg transition-all duration-300 flex items-center justify-center ${
-                    crop.growth >= 100 ? 'animate-pulse shadow-lg shadow-green-400' : ''
-                  }`}
-                  style={{
-                    width: '60px',
-                    height: `${growthHeight}px`
-                  }}
-                >
-                  <span className="text-2xl">
-                    {crop.growth >= 100 ? '🌵' : crop.growth >= 50 ? '🌱' : '🟫'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Auto Farms */}
-          {autoFarms.map(farm => {
-            const farmType = CONFIG.farmTypes.find(ft => ft.id === farm.type);
-            const worldX = getWorldX(farm.blockX);
-            
-            return (
-              <div
-                key={farm.id}
-                className="absolute border-4 border-gray-600 bg-gray-300 rounded-lg shadow-lg flex items-center justify-center"
-                style={{
-                  left: worldX,
-                  top: CONFIG.world.groundLevel - CONFIG.world.blockSize,
-                  width: farmType.size.width * CONFIG.world.blockSize,
-                  height: CONFIG.world.blockSize
-                }}
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-1">{farmType.icon}</div>
-                  <div className="text-xs font-bold pixelated">{farmType.name}</div>
-                  <div className="text-xs">+{farmType.production}/2s</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Inventory Modal */}
       {showInventory && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+          <div ref={inventoryRef} className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold pixelated">🎒 Inventory</h2>
               <button 
@@ -955,7 +846,8 @@ function App() {
                     {item && (
                       <div
                         draggable
-                        onDragStart={(e) => handleDragStart(e, item, 'inventory')}
+                        onDragStart={(e) => handleDragStart(e, item, 'inventory', index)}
+                        className="relative"
                       >
                         <span className="text-2xl">{item.icon}</span>
                         {item.quantity > 1 && (
@@ -976,7 +868,7 @@ function App() {
       {/* Shop Modal */}
       {showShop && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-96 overflow-y-auto">
+          <div ref={shopRef} className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-96 overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold pixelated">🛒 Shop</h2>
               <button 
@@ -1092,24 +984,10 @@ function App() {
       {activeMinigame && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
           <div className="relative">
-            {activeMinigame.type === 'mod_approval' && (
-              <ModApprovalMinigame 
-                onComplete={() => setActiveMinigame(null)}
-                onFail={() => setActiveMinigame(null)}
-              />
-            )}
-            {activeMinigame.type === 'cactus_lottery' && (
-              <CactusLotteryMinigame 
-                onComplete={() => setActiveMinigame(null)}
-                onFail={() => setActiveMinigame(null)}
-              />
-            )}
-            {activeMinigame.type === 'count_cactus' && (
-              <CountCactusMinigame 
-                onComplete={() => setActiveMinigame(null)}
-                onFail={() => setActiveMinigame(null)}
-              />
-            )}
+            <ModApprovalMinigame 
+              onComplete={() => setActiveMinigame(null)}
+              onFail={() => setActiveMinigame(null)}
+            />
             <button 
               onClick={() => setActiveMinigame(null)}
               className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm"
