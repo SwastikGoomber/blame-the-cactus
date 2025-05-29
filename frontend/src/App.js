@@ -16,11 +16,11 @@ const CONFIG = {
     viewportWidth: 1200,
     farmingAreaStart: 200,
     farmingAreaEnd: 3800,
-    blockSize: 120, // Increased chunk size
+    blockSize: 120,
     layout: {
-      groundHeight: 30, // Bottom 30% for ground
-      farmingHeight: 30, // Middle 30% for farming
-      skyHeight: 40 // Top 40% for sky
+      groundHeight: 30,
+      farmingHeight: 30,
+      skyHeight: 40
     }
   },
   inventory: {
@@ -127,6 +127,10 @@ function App() {
   });
   const [selectedHotbarSlot, setSelectedHotbarSlot] = useState(0);
   
+  // Drag and drop state
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragSource, setDragSource] = useState(null);
+  
   // World State
   const [farmingBlocks, setFarmingBlocks] = useState(() => {
     const blocks = {};
@@ -163,8 +167,8 @@ function App() {
   // Layout calculations
   const getLayoutPositions = () => {
     const viewportHeight = window.innerHeight;
-    const headerHeight = 64; // Header height
-    const hotbarHeight = 100; // Hotbar area height
+    const headerHeight = 64;
+    const hotbarHeight = 100;
     const gameHeight = viewportHeight - headerHeight - hotbarHeight;
     
     return {
@@ -208,12 +212,10 @@ function App() {
     const handleKeyDown = (e) => {
       keysRef.current[e.key] = true;
       
-      // Number keys for hotbar selection
       if (e.key >= '1' && e.key <= '5') {
         setSelectedHotbarSlot(parseInt(e.key) - 1);
       }
       
-      // ESC to close modals
       if (e.key === 'Escape') {
         setShowInventory(false);
         setShowShop(false);
@@ -262,12 +264,10 @@ function App() {
     
     const layout = getLayoutPositions();
     
-    // Check if clicking in farming area
     if (worldY < layout.farmingTop || worldY > layout.farmingTop + layout.farmingHeight) {
-      return; // Not clicking on farming area
+      return;
     }
     
-    // Check if in farming area
     if (worldX < CONFIG.world.farmingAreaStart || worldX > CONFIG.world.farmingAreaEnd) {
       addNotification("⚠️ You can only farm in designated areas!", 'warning', 2000);
       return;
@@ -282,7 +282,6 @@ function App() {
     if (!selectedItem) return;
     
     if (selectedItem.id === 'cactus_seed' && !block.occupied) {
-      // Plant seed
       const newCrop = {
         id: Date.now(),
         blockX: blockX,
@@ -297,7 +296,6 @@ function App() {
         [blockX]: { ...block, occupied: true, crop: newCrop.id }
       }));
       
-      // Use seed
       setHotbar(prev => {
         const newHotbar = [...prev];
         if (newHotbar[selectedHotbarSlot].quantity > 1) {
@@ -313,7 +311,6 @@ function App() {
       
       addNotification("🌱 Cactus planted!", 'plant', 1500);
     } else if (selectedItem.growthPower && block.crop) {
-      // Use wand to grow
       const crop = manualCrops.find(c => c.id === block.crop);
       if (crop && crop.growth < 100) {
         const growthIncrease = selectedItem.growthPower * 15;
@@ -325,14 +322,12 @@ function App() {
         addNotification(`+${growthIncrease}% growth`, 'growth', 1000);
       }
     } else if (selectedItem.harvestPower && block.crop) {
-      // Use hoe to harvest
       const crop = manualCrops.find(c => c.id === block.crop);
       if (crop && crop.growth >= 100) {
         const sourceGained = CONFIG.source.basePerCactus * selectedItem.harvestPower;
         setSource(prev => prev + sourceGained);
         setTotalCactiHarvested(prev => prev + 1);
         
-        // Remove crop
         setManualCrops(prev => prev.filter(c => c.id !== crop.id));
         setFarmingBlocks(prev => ({
           ...prev,
@@ -358,233 +353,149 @@ function App() {
     return () => clearInterval(interval);
   }, [autoFarms]);
 
-  // Purchase item
+  // Purchase item - FIXED TO GIVE 5 SEEDS
   const purchaseItem = (item) => {
     if (source >= item.cost) {
       setSource(prev => prev - item.cost);
       setInventory(prev => {
         const existing = prev.find(i => i.id === item.id);
+        // Special case for seeds - give 5 instead of 1
+        const quantityToAdd = item.id === 'cactus_seed' ? 5 : 1;
+        
         if (existing) {
           return prev.map(i => 
             i.id === item.id 
-              ? { ...i, quantity: i.quantity + 1 }
+              ? { ...i, quantity: i.quantity + quantityToAdd }
               : i
           );
         } else {
-          return [...prev, { ...item, quantity: 1 }];
+          return [...prev, { ...item, quantity: quantityToAdd }];
         }
       });
-      addNotification(`Purchased ${item.name}!`, 'purchase', 2000);
+      const itemName = item.id === 'cactus_seed' ? `5x ${item.name}` : item.name;
+      addNotification(`Purchased ${itemName}!`, 'purchase', 2000);
     }
   };
 
-  // Fixed Drag and Drop System
-  const handleDragStart = (e, item, sourceType, sourceIndex) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/json', JSON.stringify({
-      item,
-      sourceType,
-      sourceIndex
-    }));
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e, targetType, targetIndex) => {
-    e.preventDefault();
-    e.stopPropagation();
+  // COMPLETELY REWRITTEN Drag and Drop System
+  const handleDragStart = (event, item, sourceType, sourceIndex) => {
+    event.stopPropagation();
+    setDraggedItem({ item, sourceType, sourceIndex });
     
-    try {
-      const dragData = JSON.parse(e.dataTransfer.getData('application/json'));
-      const { item, sourceType, sourceIndex } = dragData;
+    // Create a transparent drag image
+    const dragImage = document.createElement('div');
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-1000px';
+    dragImage.innerHTML = item.icon;
+    dragImage.style.fontSize = '2rem';
+    document.body.appendChild(dragImage);
+    
+    event.dataTransfer.setDragImage(dragImage, 25, 25);
+    event.dataTransfer.effectAllowed = 'move';
+    
+    setTimeout(() => {
+      document.body.removeChild(dragImage);
+    }, 0);
+  };
+
+  const handleDragEnd = (event) => {
+    event.stopPropagation();
+    setDraggedItem(null);
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (event, targetType, targetIndex = null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    if (!draggedItem) return;
+    
+    const { item, sourceType, sourceIndex } = draggedItem;
+    
+    // Prevent dropping on the same slot
+    if (sourceType === targetType && sourceIndex === targetIndex) {
+      setDraggedItem(null);
+      return;
+    }
+    
+    if (targetType === 'hotbar' && targetIndex !== null) {
+      const currentHotbarItem = hotbar[targetIndex];
       
-      if (targetType === 'hotbar') {
-        const currentHotbarItem = hotbar[targetIndex];
+      if (sourceType === 'inventory') {
+        // Moving from inventory to hotbar
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          newHotbar[targetIndex] = item;
+          return newHotbar;
+        });
         
-        if (sourceType === 'inventory') {
-          // Moving from inventory to hotbar
-          setHotbar(prev => {
-            const newHotbar = [...prev];
-            
-            // If hotbar slot has item, move it to inventory
-            if (currentHotbarItem) {
-              setInventory(prevInv => {
-                const existing = prevInv.find(i => i.id === currentHotbarItem.id);
-                if (existing) {
-                  return prevInv.map(i => 
-                    i.id === currentHotbarItem.id 
-                      ? { ...i, quantity: i.quantity + currentHotbarItem.quantity }
-                      : i
-                  );
-                } else {
-                  return [...prevInv, currentHotbarItem];
-                }
-              });
-            }
-            
-            newHotbar[targetIndex] = item;
-            return newHotbar;
-          });
-          
-          // Remove from inventory
-          setInventory(prev => prev.filter(i => i.id !== item.id));
-          
-        } else if (sourceType === 'hotbar') {
-          // Swapping hotbar items
-          setHotbar(prev => {
-            const newHotbar = [...prev];
-            newHotbar[sourceIndex] = currentHotbarItem;
-            newHotbar[targetIndex] = item;
-            return newHotbar;
-          });
+        // Remove from inventory
+        setInventory(prev => prev.filter((_, index) => index !== sourceIndex));
+        
+        // If hotbar slot had an item, move it to inventory
+        if (currentHotbarItem) {
+          setInventory(prev => [...prev, currentHotbarItem]);
         }
-      } else if (targetType === 'inventory') {
-        if (sourceType === 'hotbar') {
-          // Moving from hotbar to inventory
-          setInventory(prev => {
-            const existing = prev.find(i => i.id === item.id);
-            if (existing) {
-              return prev.map(i => 
-                i.id === item.id 
-                  ? { ...i, quantity: i.quantity + item.quantity }
-                  : i
-              );
-            } else {
-              return [...prev, item];
-            }
-          });
-          
-          // Remove from hotbar
-          setHotbar(prev => {
-            const newHotbar = [...prev];
-            newHotbar[sourceIndex] = null;
-            return newHotbar;
-          });
-        }
+        
+      } else if (sourceType === 'hotbar') {
+        // Swapping hotbar items
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          newHotbar[sourceIndex] = currentHotbarItem;
+          newHotbar[targetIndex] = item;
+          return newHotbar;
+        });
       }
-    } catch (error) {
-      console.error('Drag and drop error:', error);
+      
+    } else if (targetType === 'inventory') {
+      if (sourceType === 'hotbar') {
+        // Moving from hotbar to inventory
+        setInventory(prev => [...prev, item]);
+        
+        // Remove from hotbar
+        setHotbar(prev => {
+          const newHotbar = [...prev];
+          newHotbar[sourceIndex] = null;
+          return newHotbar;
+        });
+        
+      } else if (sourceType === 'inventory' && targetIndex !== null) {
+        // Rearranging within inventory
+        setInventory(prev => {
+          const newInventory = [...prev];
+          const targetItem = newInventory[targetIndex];
+          newInventory[sourceIndex] = targetItem;
+          newInventory[targetIndex] = item;
+          return newInventory;
+        });
+      }
     }
-  };
-
-  // Minigames
-  const ModApprovalMinigame = ({ onComplete, onFail }) => {
-    const [formData, setFormData] = useState({
-      name: '',
-      reason: '',
-      checkboxes: Array(6).fill(false)
-    });
-    const [movingCheckbox, setMovingCheckbox] = useState(-1);
     
-    useEffect(() => {
-      const interval = setInterval(() => {
-        setMovingCheckbox(Math.floor(Math.random() * 6));
-      }, 2000);
-      return () => clearInterval(interval);
-    }, []);
-    
-    const handleSubmit = () => {
-      if (formData.name && formData.reason && formData.checkboxes.every(c => c)) {
-        onComplete();
-      } else {
-        addNotification("❌ Incomplete application!", 'error', 2000);
-        onFail();
-      }
-    };
-    
-    return (
-      <div className="bg-yellow-50 p-6 rounded border-4 border-yellow-600 max-w-md">
-        <h3 className="text-lg font-bold mb-4 pixelated">📋 Farm Application Form</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold mb-1">Your Name:</label>
-            <input 
-              type="text" 
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full border-2 border-gray-400 rounded px-2 py-1"
-              placeholder="Enter your username"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold mb-1">Reason for Farm:</label>
-            <select 
-              value={formData.reason}
-              onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-              className="w-full border-2 border-gray-400 rounded px-2 py-1"
-            >
-              <option value="">Select reason...</option>
-              <option value="science">For science</option>
-              <option value="annoy">To annoy mods</option>
-              <option value="dunno">I dunno</option>
-              <option value="profit">Profit!</option>
-              <option value="chaos">Pure chaos</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-bold mb-2">Agreements:</label>
-            {formData.checkboxes.map((checked, index) => (
-              <div 
-                key={index} 
-                className={`flex items-center mb-1 transition-all duration-300 ${
-                  movingCheckbox === index ? 'transform translate-x-2' : ''
-                }`}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={checked}
-                  onChange={(e) => {
-                    const newCheckboxes = [...formData.checkboxes];
-                    newCheckboxes[index] = e.target.checked;
-                    setFormData(prev => ({ ...prev, checkboxes: newCheckboxes }));
-                  }}
-                  className="mr-2"
-                />
-                <span className="text-xs">
-                  {['I will not lag the server', 'I understand TPS limits', 'No griefing with cacti', 
-                    'I accept blame for everything', 'Cacti are not weapons', 'Server rules apply'][index]}
-                </span>
-              </div>
-            ))}
-          </div>
-          <button 
-            onClick={handleSubmit}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
-          >
-            Submit Application
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // NPC Animation System (keeping same)
-  const spawnCultist = () => {
-    setNpcAnimation({
-      type: 'cultist',
-      phase: 'entering',
-      direction: Math.random() < 0.5 ? 'left' : 'right',
-      position: 0
-    });
-    
-    addNotification("🌵 A mysterious cult approaches your farm... 🌵", 'cultist', 4000);
+    setDraggedItem(null);
   };
 
   // Random events
   useEffect(() => {
     const eventInterval = setInterval(() => {
       if (Math.random() < 0.005 && totalCactiHarvested > 20) {
-        spawnCultist();
+        setNpcAnimation({
+          type: 'cultist',
+          phase: 'entering',
+          direction: Math.random() < 0.5 ? 'left' : 'right',
+          position: 0
+        });
+        addNotification("🌵 A mysterious cult approaches your farm... 🌵", 'cultist', 4000);
       }
     }, 1000);
 
     return () => clearInterval(eventInterval);
   }, [totalCactiHarvested]);
 
-  // Layout positions
   const layout = getLayoutPositions();
 
   return (
@@ -660,7 +571,7 @@ function App() {
 
       {/* Game World */}
       <div className="fixed top-16 left-0 right-0 bottom-20">
-        {/* Sky Layer (Top 40%) */}
+        {/* Sky Layer */}
         <div 
           className="absolute w-full"
           style={{
@@ -672,7 +583,7 @@ function App() {
           }}
         />
 
-        {/* Farming Layer (Middle 30%) */}
+        {/* Farming Layer */}
         <div 
           ref={gameWorldRef}
           className="absolute w-full cursor-crosshair"
@@ -690,7 +601,7 @@ function App() {
               transform: `translateX(-${scrollPosition}px)`
             }}
           >
-            {/* Farming Blocks Visualization */}
+            {/* Farming Blocks */}
             {Object.entries(farmingBlocks).map(([blockX, block]) => {
               const worldX = getWorldX(parseInt(blockX));
               return (
@@ -740,35 +651,10 @@ function App() {
                 </div>
               );
             })}
-
-            {/* Auto Farms */}
-            {autoFarms.map(farm => {
-              const farmType = CONFIG.farmTypes.find(ft => ft.id === farm.type);
-              const worldX = getWorldX(farm.blockX);
-              
-              return (
-                <div
-                  key={farm.id}
-                  className="absolute border-4 border-gray-600 bg-gray-300 rounded-lg shadow-lg flex items-center justify-center"
-                  style={{
-                    left: worldX,
-                    top: 0,
-                    width: farmType.size.width * CONFIG.world.blockSize,
-                    height: layout.farmingHeight
-                  }}
-                >
-                  <div className="text-center">
-                    <div className="text-4xl mb-2">{farmType.icon}</div>
-                    <div className="text-xs font-bold pixelated">{farmType.name}</div>
-                    <div className="text-xs">+{farmType.production}/2s</div>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
 
-        {/* Ground Layer (Bottom 30%) */}
+        {/* Ground Layer */}
         <div 
           className="absolute w-full"
           style={{
@@ -798,8 +684,9 @@ function App() {
               {item && (
                 <div 
                   className="relative"
-                  draggable={!showInventory}
+                  draggable
                   onDragStart={(e) => handleDragStart(e, item, 'hotbar', index)}
+                  onDragEnd={handleDragEnd}
                 >
                   <span>{item.icon}</span>
                   {item.quantity > 1 && (
@@ -813,7 +700,7 @@ function App() {
           ))}
         </div>
         <div className="text-center text-white text-xs pixelated mt-1">
-          Use arrow keys to scroll • 1-5 keys for hotbar • Click to interact
+          Use arrow keys to scroll • 1-5 keys for hotbar • Drag items to organize
         </div>
       </div>
 
@@ -831,23 +718,22 @@ function App() {
               </button>
             </div>
             
-            <div 
-              className="grid grid-cols-8 gap-2"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, 'inventory')}
-            >
+            <div className="grid grid-cols-8 gap-2">
               {Array.from({ length: 24 }, (_, index) => {
                 const item = inventory[index];
                 return (
                   <div
                     key={index}
                     className="w-16 h-16 border-2 border-gray-400 rounded bg-gray-100 flex items-center justify-center relative cursor-pointer hover:bg-gray-200"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, 'inventory', index)}
                   >
                     {item && (
                       <div
+                        className="relative"
                         draggable
                         onDragStart={(e) => handleDragStart(e, item, 'inventory', index)}
-                        className="relative"
+                        onDragEnd={handleDragEnd}
                       >
                         <span className="text-2xl">{item.icon}</span>
                         {item.quantity > 1 && (
@@ -895,7 +781,7 @@ function App() {
                     <div className="flex items-center">
                       <span className="text-2xl mr-2">{item.icon}</span>
                       <div className="text-left">
-                        <div className="font-bold">{item.name}</div>
+                        <div className="font-bold">5x {item.name}</div>
                         <div className="text-xs">💰 {item.cost} Source</div>
                       </div>
                     </div>
@@ -951,49 +837,6 @@ function App() {
                 ))}
               </div>
             </div>
-
-            {/* Farms */}
-            <div className="mt-6">
-              <h3 className="text-lg font-bold mb-2 pixelated">🏗️ Farms</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {CONFIG.farmTypes.map((farmType) => (
-                  <button
-                    key={farmType.id}
-                    onClick={() => purchaseItem({ ...farmType, icon: farmType.icon })}
-                    disabled={source < farmType.cost}
-                    className={`p-4 rounded border-2 text-sm ${
-                      source >= farmType.cost ? 'bg-blue-100 border-blue-400 hover:bg-blue-200' : 'bg-gray-100 border-gray-400'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">{farmType.icon}</div>
-                      <div className="font-bold">{farmType.name}</div>
-                      <div className="text-xs">{farmType.description}</div>
-                      <div className="text-xs mt-1">Size: {farmType.size.width} blocks</div>
-                      <div className="text-xs font-bold text-blue-600">💰 {farmType.cost} Source</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Minigame Modal */}
-      {activeMinigame && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="relative">
-            <ModApprovalMinigame 
-              onComplete={() => setActiveMinigame(null)}
-              onFail={() => setActiveMinigame(null)}
-            />
-            <button 
-              onClick={() => setActiveMinigame(null)}
-              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm"
-            >
-              ✕
-            </button>
           </div>
         </div>
       )}
