@@ -1,166 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
-
-// Game Configuration
-const CONFIG = {
-  source: {
-    basePerCactus: 5,
-    multiplier: 1,
-  },
-  tps: {
-    maxTPS: 20,
-    tpsDecayRate: 0.05,
-  },
-  world: {
-    width: 4000,
-    viewportWidth: 1200,
-    farmingAreaStart: 200,
-    farmingAreaEnd: 3800,
-    blockSize: 120,
-    layout: {
-      groundHeight: 30,
-      farmingHeight: 30,
-      skyHeight: 40,
-    },
-  },
-  inventory: {
-    hotbarSize: 5,
-    maxItems: 20,
-  },
-  items: {
-    seeds: [{ id: "cactus_seed", name: "Cactus Seed", cost: 5, icon: "🌰" }],
-    wands: [
-      {
-        id: "wooden_wand",
-        name: "Wooden Wand",
-        cost: 0,
-        growthPower: 1,
-        aoe: 0,
-        icon: "🪄",
-      },
-      {
-        id: "oak_wand",
-        name: "Oak Wand",
-        cost: 50,
-        growthPower: 2,
-        aoe: 1,
-        icon: "✨",
-      },
-      {
-        id: "silverwood_wand",
-        name: "Silverwood Wand",
-        cost: 200,
-        growthPower: 4,
-        aoe: 2,
-        icon: "🔮",
-      },
-      {
-        id: "thaumcraft_focus",
-        name: "Thaumcraft Focus",
-        cost: 500,
-        growthPower: 6,
-        aoe: 3,
-        icon: "⚡",
-      },
-    ],
-    hoes: [
-      {
-        id: "wooden_hoe",
-        name: "Wooden Hoe",
-        cost: 0,
-        harvestPower: 1,
-        aoe: 0,
-        icon: "🔧",
-      },
-      {
-        id: "iron_hoe",
-        name: "Iron Hoe",
-        cost: 75,
-        harvestPower: 2,
-        aoe: 1,
-        icon: "⚒️",
-      },
-      {
-        id: "mattock",
-        name: "Mattock",
-        cost: 300,
-        harvestPower: 4,
-        aoe: 2,
-        icon: "🛠️",
-      },
-      {
-        id: "kama",
-        name: "Kama",
-        cost: 800,
-        harvestPower: 6,
-        aoe: 3,
-        icon: "⚔️",
-      },
-    ],
-  },
-  farmTypes: [
-    {
-      id: "vanilla_basic",
-      name: "Basic Cactus Farm",
-      cost: 100,
-      description: "Simple vanilla Minecraft cactus farm",
-      production: 1,
-      minigame: "mod_approval",
-      size: { width: 2, height: 1 },
-      icon: "🏠",
-    },
-    {
-      id: "vanilla_advanced",
-      name: "Piston Cactus Farm",
-      cost: 500,
-      description: "Automated piston-based harvester",
-      production: 5,
-      minigame: "cactus_lottery",
-      size: { width: 3, height: 1 },
-      icon: "🏭",
-    },
-    {
-      id: "mystical_agriculture",
-      name: "Mystical Agriculture Plot",
-      cost: 1000,
-      description: "Magical essence-infused growing",
-      production: 10,
-      minigame: "count_cactus",
-      size: { width: 3, height: 1 },
-      icon: "🔯",
-    },
-    {
-      id: "industrial_foregoing",
-      name: "Plant Gatherer",
-      cost: 2000,
-      description: "High-tech automated harvesting",
-      production: 20,
-      minigame: "tech_calibration",
-      size: { width: 4, height: 1 },
-      icon: "⚙️",
-    },
-    {
-      id: "stardew_greenhouse",
-      name: "Stardew Greenhouse",
-      cost: 3000,
-      description: "Year-round magical growing",
-      production: 30,
-      minigame: "sprinkler_puzzle",
-      size: { width: 5, height: 1 },
-      icon: "🏛️",
-    },
-  ],
-  players: [
-    { name: "BlockMaster2024", avatar: "🧱" },
-    { name: "RedstoneWizard", avatar: "⚡" },
-    { name: "CactusSkeptic", avatar: "🤨" },
-    { name: "BuildCrafter", avatar: "🔨" },
-  ],
-  mods: [
-    { name: "Admin_Sarah", avatar: "👮‍♀️", personality: "strict" },
-    { name: "Mod_Jackson", avatar: "🛡️", personality: "suspicious" },
-  ],
-};
+import { CONFIG } from "./config/gameConfig";
+import {
+  ModApprovalMinigame,
+  CactusLotteryMinigame,
+  CountCactusMinigame,
+  TechCalibrationMinigame,
+  SprinklerPuzzleMinigame,
+} from "./components/Minigames";
+import { Header } from "./components/UI/Header";
+import { Shop } from "./components/UI/Shop";
+import { Inventory } from "./components/UI/Inventory";
+import { Hotbar } from "./components/UI/Hotbar";
+import { Notifications } from "./components/UI/Notifications";
 
 function App() {
   // Game State
@@ -215,6 +67,8 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [activeMinigame, setActiveMinigame] = useState(null);
   const [npcAnimation, setNpcAnimation] = useState(null);
+  const [farmPlacement, setFarmPlacement] = useState(null);
+  const [failurePopup, setFailurePopup] = useState(null);
 
   // Refs
   const gameWorldRef = useRef(null);
@@ -257,79 +111,38 @@ function App() {
     []
   );
 
-  // Click outside to close modals (excluding hotbar)
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      // Check if click is on hotbar or its children
-      const isClickOnHotbar =
-        hotbarRef.current && hotbarRef.current.contains(event.target);
+  // Purchase item - Updated to handle farms as items
+  const purchaseItem = (item) => {
+    if (source >= item.cost) {
+      setSource((prev) => prev - item.cost);
+      setInventory((prev) => {
+        const existing = prev.find((i) => i && i.id === item.id);
+        const quantityToAdd = item.id === "cactus_seed" ? 5 : 1;
 
-      if (
-        showInventory &&
-        inventoryRef.current &&
-        !inventoryRef.current.contains(event.target) &&
-        !isClickOnHotbar
-      ) {
-        setShowInventory(false);
-      }
-      if (
-        showShop &&
-        shopRef.current &&
-        !shopRef.current.contains(event.target)
-      ) {
-        setShowShop(false);
-      }
-    };
+        if (existing) {
+          return prev.map((i) =>
+            i && i.id === item.id
+              ? { ...i, quantity: i.quantity + quantityToAdd }
+              : i
+          );
+        } else {
+          return [...prev, { ...item, quantity: quantityToAdd }];
+        }
+      });
+      const itemName =
+        item.id === "cactus_seed" ? `5x ${item.name}` : item.name;
+      addNotification(`Purchased ${itemName}!`, "purchase", 2000);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showInventory, showShop]);
-
-  // Keyboard controls
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      keysRef.current[e.key] = true;
-
-      if (e.key >= "1" && e.key <= "5") {
-        setSelectedHotbarSlot(parseInt(e.key) - 1);
-      }
-
-      if (e.key === "Escape") {
-        setShowInventory(false);
-        setShowShop(false);
-      }
-    };
-
-    const handleKeyUp = (e) => {
-      keysRef.current[e.key] = false;
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-
-    const scrollInterval = setInterval(() => {
-      const scrollSpeed = 10;
-      if (keysRef.current["ArrowLeft"]) {
-        setScrollPosition((prev) => Math.max(0, prev - scrollSpeed));
-      }
-      if (keysRef.current["ArrowRight"]) {
-        setScrollPosition((prev) =>
-          Math.min(
-            CONFIG.world.width - CONFIG.world.viewportWidth,
-            prev + scrollSpeed
-          )
+      // If it's a farm, add instruction
+      if (item.type === "farm") {
+        addNotification(
+          "Drag farm to hotbar and place it in the world!",
+          "info",
+          3000
         );
       }
-    }, 16);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      clearInterval(scrollInterval);
-    };
-  }, []);
+    }
+  };
 
   // Get block coordinate from world X position
   const getBlockX = (worldX) => {
@@ -341,24 +154,49 @@ function App() {
     return blockX * CONFIG.world.blockSize;
   };
 
-  // Handle farming block click
-  const handleFarmingBlockClick = (blockX, event) => {
-    event.stopPropagation();
-    console.log("Farming block clicked!", blockX);
-
-    if (showInventory || showShop) return;
-
+  // Generic function to handle item usage on a block (for both click and drag)
+  const useItemOnBlock = (
+    item,
+    blockX,
+    sourceType = "hotbar",
+    sourceIndex = null
+  ) => {
     const block = farmingBlocks[blockX];
-    if (!block) return;
+    if (!block) return false;
 
-    const selectedItem = hotbar[selectedHotbarSlot];
-    if (!selectedItem) {
-      addNotification("⚠️ Select a tool or seed first!", "warning", 1500);
-      return;
+    // Handle farm placement with minigame
+    if (item.type === "farm" && !block.occupied) {
+      console.log("Using farm - trigger minigame!");
+
+      const farmType = CONFIG.farmTypes.find((ft) => ft.id === item.id);
+      if (farmType) {
+        setFarmPlacement({
+          farmItem: item,
+          blockX: blockX,
+          sourceType: sourceType,
+          sourceIndex: sourceIndex,
+        });
+
+        setActiveMinigame({
+          type: farmType.minigame,
+          farmType: farmType,
+          placement: true,
+        });
+
+        addNotification(
+          "🎮 Complete the minigame to place your farm!",
+          "info",
+          2000
+        );
+        return true;
+      }
+      return false;
     }
 
     // Handle planting seeds
-    if (selectedItem.id === "cactus_seed" && !block.occupied) {
+    if (item.id === "cactus_seed" && !block.occupied) {
+      console.log("Planting seed!");
+
       const newCrop = {
         id: Date.now(),
         blockX: blockX,
@@ -373,25 +211,48 @@ function App() {
         [blockX]: { ...block, occupied: true, crop: newCrop.id },
       }));
 
-      // Consume seed
-      setHotbar((prev) => {
-        const newHotbar = [...prev];
-        if (newHotbar[selectedHotbarSlot].quantity > 1) {
-          newHotbar[selectedHotbarSlot] = {
-            ...newHotbar[selectedHotbarSlot],
-            quantity: newHotbar[selectedHotbarSlot].quantity - 1,
-          };
-        } else {
-          newHotbar[selectedHotbarSlot] = null;
-        }
-        return newHotbar;
-      });
+      // Consume seed from appropriate source
+      if (sourceType === "hotbar") {
+        setHotbar((prev) => {
+          const newHotbar = [...prev];
+          const slotIndex =
+            sourceIndex !== null ? sourceIndex : selectedHotbarSlot;
+          if (newHotbar[slotIndex] && newHotbar[slotIndex].quantity > 1) {
+            newHotbar[slotIndex] = {
+              ...newHotbar[slotIndex],
+              quantity: newHotbar[slotIndex].quantity - 1,
+            };
+          } else {
+            newHotbar[slotIndex] = null;
+          }
+          return newHotbar;
+        });
+      } else if (sourceType === "inventory" && sourceIndex !== null) {
+        setInventory((prev) => {
+          const newInventory = [...prev];
+          if (
+            newInventory[sourceIndex] &&
+            newInventory[sourceIndex].quantity > 1
+          ) {
+            newInventory[sourceIndex] = {
+              ...newInventory[sourceIndex],
+              quantity: newInventory[sourceIndex].quantity - 1,
+            };
+          } else {
+            newInventory.splice(sourceIndex, 1);
+          }
+          return newInventory;
+        });
+      }
 
       addNotification("🌱 Cactus planted!", "plant", 1500);
-    } else if (selectedItem.growthPower && block.crop) {
+      return true;
+
+      // Handle growing crops with wand
+    } else if (item.growthPower && block.crop) {
       const crop = manualCrops.find((c) => c.id === block.crop);
       if (crop && crop.growth < 100) {
-        const growthIncrease = selectedItem.growthPower * 15;
+        const growthIncrease = item.growthPower * 15;
         setManualCrops((prev) =>
           prev.map((c) =>
             c.id === crop.id
@@ -400,18 +261,21 @@ function App() {
           )
         );
         addNotification(`+${growthIncrease}% growth`, "growth", 1000);
+        return true;
       } else if (crop && crop.growth >= 100) {
         addNotification(
           "🌵 Use a hoe to harvest this cactus!",
           "warning",
           1500
         );
+        return false;
       }
-    } else if (selectedItem.harvestPower && block.crop) {
+
+      // Handle harvesting with hoe
+    } else if (item.harvestPower && block.crop) {
       const crop = manualCrops.find((c) => c.id === block.crop);
       if (crop && crop.growth >= 100) {
-        const sourceGained =
-          CONFIG.source.basePerCactus * selectedItem.harvestPower;
+        const sourceGained = CONFIG.source.basePerCactus * item.harvestPower;
         setSource((prev) => prev + sourceGained);
         setTotalCactiHarvested((prev) => prev + 1);
 
@@ -422,24 +286,32 @@ function App() {
         }));
 
         addNotification(`+${sourceGained} Source`, "source", 1500);
+        return true;
       } else if (crop && crop.growth < 100) {
         addNotification(
           "🌱 This cactus isn't ready to harvest yet!",
           "warning",
           1500
         );
+        return false;
       }
-    } else if (selectedItem.id === "cactus_seed" && block.occupied) {
+    } else if (item.id === "cactus_seed" && block.occupied) {
       addNotification("⚠️ This block is already occupied!", "warning", 1500);
+      return false;
+    } else if (item.type === "farm" && block.occupied) {
+      addNotification("⚠️ This block is already occupied!", "warning", 1500);
+      return false;
     }
+
+    return false;
   };
 
-  // Handle world click for farming
+  // Handle world click for farming and farm placement
   const handleWorldClick = (event) => {
-    console.log("World clicked!"); // Debug log
+    console.log("World clicked!");
 
     // Prevent interaction if any modals are open
-    if (showInventory || showShop) {
+    if (showInventory || showShop || activeMinigame) {
       console.log("Modal open, blocking interaction");
       return;
     }
@@ -448,7 +320,7 @@ function App() {
     const worldX = event.clientX - rect.left + scrollPosition;
     const worldY = event.clientY - rect.top;
 
-    console.log("Click position:", { worldX, worldY }); // Debug log
+    console.log("Click position:", { worldX, worldY });
 
     const layout = getLayoutPositions();
 
@@ -459,7 +331,7 @@ function App() {
     console.log("Farming bounds:", {
       adjustedFarmingTop,
       adjustedFarmingBottom,
-    }); // Debug log
+    });
 
     if (worldY < adjustedFarmingTop || worldY > adjustedFarmingBottom) {
       console.log("Click outside farming area");
@@ -479,141 +351,57 @@ function App() {
     }
 
     const blockX = getBlockX(worldX);
-    const block = farmingBlocks[blockX];
-
-    console.log("Block info:", { blockX, block }); // Debug log
-
-    if (!block) return;
-
     const selectedItem = hotbar[selectedHotbarSlot];
-    console.log("Selected item:", selectedItem); // Debug log
 
     if (!selectedItem) {
       addNotification("⚠️ Select a tool or seed first!", "warning", 1500);
       return;
     }
 
-    // Handle planting seeds
-    if (selectedItem.id === "cactus_seed" && !block.occupied) {
-      console.log("Planting seed!"); // Debug log
+    useItemOnBlock(selectedItem, blockX);
+  };
 
-      const newCrop = {
-        id: Date.now(),
-        blockX: blockX,
-        growth: 0,
-        maxGrowth: 100,
-        type: "cactus",
-      };
+  // Handle farming block click
+  const handleFarmingBlockClick = (blockX, event) => {
+    event.stopPropagation();
+    console.log("Farming block clicked!", blockX);
 
-      setManualCrops((prev) => [...prev, newCrop]);
-      setFarmingBlocks((prev) => ({
-        ...prev,
-        [blockX]: { ...block, occupied: true, crop: newCrop.id },
-      }));
+    if (showInventory || showShop) return;
 
-      // Consume seed
-      setHotbar((prev) => {
-        const newHotbar = [...prev];
-        if (newHotbar[selectedHotbarSlot].quantity > 1) {
-          newHotbar[selectedHotbarSlot] = {
-            ...newHotbar[selectedHotbarSlot],
-            quantity: newHotbar[selectedHotbarSlot].quantity - 1,
-          };
-        } else {
-          newHotbar[selectedHotbarSlot] = null;
-        }
-        return newHotbar;
-      });
+    const selectedItem = hotbar[selectedHotbarSlot];
+    if (!selectedItem) {
+      addNotification("⚠️ Select a tool or seed first!", "warning", 1500);
+      return;
+    }
 
-      addNotification("🌱 Cactus planted!", "plant", 1500);
+    useItemOnBlock(selectedItem, blockX);
+  };
 
-      // Handle growing crops with wand
-    } else if (selectedItem.growthPower && block.crop) {
-      const crop = manualCrops.find((c) => c.id === block.crop);
-      if (crop && crop.growth < 100) {
-        const growthIncrease = selectedItem.growthPower * 15;
-        setManualCrops((prev) =>
-          prev.map((c) =>
-            c.id === crop.id
-              ? { ...c, growth: Math.min(100, c.growth + growthIncrease) }
-              : c
-          )
-        );
-        addNotification(`+${growthIncrease}% growth`, "growth", 1000);
-      } else if (crop && crop.growth >= 100) {
-        addNotification(
-          "🌵 Use a hoe to harvest this cactus!",
-          "warning",
-          1500
-        );
-      }
-
-      // Handle harvesting with hoe
-    } else if (selectedItem.harvestPower && block.crop) {
-      const crop = manualCrops.find((c) => c.id === block.crop);
-      if (crop && crop.growth >= 100) {
-        const sourceGained =
-          CONFIG.source.basePerCactus * selectedItem.harvestPower;
-        setSource((prev) => prev + sourceGained);
-        setTotalCactiHarvested((prev) => prev + 1);
-
-        setManualCrops((prev) => prev.filter((c) => c.id !== crop.id));
-        setFarmingBlocks((prev) => ({
-          ...prev,
-          [blockX]: { ...block, occupied: false, crop: null },
-        }));
-
-        addNotification(`+${sourceGained} Source`, "source", 1500);
-      } else if (crop && crop.growth < 100) {
-        addNotification(
-          "🌱 This cactus isn't ready to harvest yet!",
-          "warning",
-          1500
-        );
-      }
-    } else if (selectedItem.id === "cactus_seed" && block.occupied) {
-      addNotification("⚠️ This block is already occupied!", "warning", 1500);
+  // Handle drag and drop on farming blocks
+  const handleFarmingBlockDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (draggedItem) {
+      event.dataTransfer.dropEffect = "move";
     }
   };
 
-  // Auto farm production
-  useEffect(() => {
-    const interval = setInterval(() => {
-      autoFarms.forEach((farm) => {
-        const farmType = CONFIG.farmTypes.find((ft) => ft.id === farm.type);
-        const production =
-          farmType.production * (farm.upgrades?.multiplier || 1);
-        setSource((prev) => prev + production);
-        setTotalCactiHarvested((prev) => prev + production);
-      });
-    }, 2000);
+  const handleFarmingBlockDrop = (event, blockX) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-    return () => clearInterval(interval);
-  }, [autoFarms]);
+    if (!draggedItem) return;
 
-  // Purchase item
-  const purchaseItem = (item) => {
-    if (source >= item.cost) {
-      setSource((prev) => prev - item.cost);
-      setInventory((prev) => {
-        const existing = prev.find((i) => i.id === item.id);
-        // Special case for seeds - give 5 instead of 1
-        const quantityToAdd = item.id === "cactus_seed" ? 5 : 1;
+    console.log("Item dropped on farming block:", blockX, draggedItem);
 
-        if (existing) {
-          return prev.map((i) =>
-            i.id === item.id
-              ? { ...i, quantity: i.quantity + quantityToAdd }
-              : i
-          );
-        } else {
-          return [...prev, { ...item, quantity: quantityToAdd }];
-        }
-      });
-      const itemName =
-        item.id === "cactus_seed" ? `5x ${item.name}` : item.name;
-      addNotification(`Purchased ${itemName}!`, "purchase", 2000);
-    }
+    const { item, sourceType, sourceIndex } = draggedItem;
+
+    // Use the item on the block
+    const success = useItemOnBlock(item, blockX, sourceType, sourceIndex);
+
+    // Clear drag state
+    setDraggedItem(null);
+    setDragSource(null);
   };
 
   // Drag and Drop System
@@ -786,6 +574,100 @@ function App() {
     setDragSource(null);
   };
 
+  // Click outside to close modals (excluding hotbar)
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if click is on hotbar or its children
+      const isClickOnHotbar =
+        hotbarRef.current && hotbarRef.current.contains(event.target);
+
+      if (
+        showInventory &&
+        inventoryRef.current &&
+        !inventoryRef.current.contains(event.target) &&
+        !isClickOnHotbar
+      ) {
+        setShowInventory(false);
+      }
+      if (
+        showShop &&
+        shopRef.current &&
+        !shopRef.current.contains(event.target)
+      ) {
+        setShowShop(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showInventory, showShop]);
+
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      keysRef.current[e.key] = true;
+
+      if (e.key >= "1" && e.key <= "5") {
+        setSelectedHotbarSlot(parseInt(e.key) - 1);
+      }
+
+      if (e.key === "Escape") {
+        setShowInventory(false);
+        setShowShop(false);
+        setFarmPlacement(null);
+        setActiveMinigame(null);
+        setFailurePopup(null);
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      keysRef.current[e.key] = false;
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    const scrollInterval = setInterval(() => {
+      const scrollSpeed = 10;
+      if (keysRef.current["ArrowLeft"]) {
+        setScrollPosition((prev) => Math.max(0, prev - scrollSpeed));
+      }
+      if (keysRef.current["ArrowRight"]) {
+        setScrollPosition((prev) =>
+          Math.min(
+            CONFIG.world.width - CONFIG.world.viewportWidth,
+            prev + scrollSpeed
+          )
+        );
+      }
+    }, 16);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      clearInterval(scrollInterval);
+    };
+  }, []);
+
+  // Auto farm production
+  useEffect(() => {
+    const interval = setInterval(() => {
+      autoFarms.forEach((farm) => {
+        const farmType = CONFIG.farmTypes.find((ft) => ft.id === farm.type);
+        if (farmType) {
+          const production =
+            farmType.production * (farm.upgrades?.multiplier || 1);
+          setSource((prev) => prev + production);
+          setTotalCactiHarvested((prev) => prev + production);
+        }
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [autoFarms]);
+
   // Random events
   useEffect(() => {
     const eventInterval = setInterval(() => {
@@ -805,35 +687,117 @@ function App() {
     }, 1000);
 
     return () => clearInterval(eventInterval);
-  }, [totalCactiHarvested]);
+  }, [totalCactiHarvested, addNotification]);
+
+  // Complete minigame and handle result
+  const handleMinigameComplete = (success) => {
+    if (success && activeMinigame?.placement && farmPlacement) {
+      // Player won the minigame, place the farm
+      const newFarm = {
+        id: Date.now(),
+        type: activeMinigame.farmType.id,
+        position: { x: getWorldX(farmPlacement.blockX) + 40, y: 50 },
+        upgrades: { multiplier: 1 },
+      };
+
+      setAutoFarms((prev) => [...prev, newFarm]);
+
+      // Mark the block as occupied with the farm
+      setFarmingBlocks((prev) => ({
+        ...prev,
+        [farmPlacement.blockX]: {
+          ...prev[farmPlacement.blockX],
+          occupied: true,
+          farm: newFarm.id,
+        },
+      }));
+
+      // Consume farm item from the appropriate source
+      if (farmPlacement.sourceType === "hotbar") {
+        const slotIndex =
+          farmPlacement.sourceIndex !== null
+            ? farmPlacement.sourceIndex
+            : selectedHotbarSlot;
+        setHotbar((prev) => {
+          const newHotbar = [...prev];
+          if (newHotbar[slotIndex] && newHotbar[slotIndex].quantity > 1) {
+            newHotbar[slotIndex] = {
+              ...newHotbar[slotIndex],
+              quantity: newHotbar[slotIndex].quantity - 1,
+            };
+          } else {
+            newHotbar[slotIndex] = null;
+          }
+          return newHotbar;
+        });
+      } else if (
+        farmPlacement.sourceType === "inventory" &&
+        farmPlacement.sourceIndex !== null
+      ) {
+        setInventory((prev) => {
+          const newInventory = [...prev];
+          if (
+            newInventory[farmPlacement.sourceIndex] &&
+            newInventory[farmPlacement.sourceIndex].quantity > 1
+          ) {
+            newInventory[farmPlacement.sourceIndex] = {
+              ...newInventory[farmPlacement.sourceIndex],
+              quantity: newInventory[farmPlacement.sourceIndex].quantity - 1,
+            };
+          } else {
+            newInventory.splice(farmPlacement.sourceIndex, 1);
+          }
+          return newInventory;
+        });
+      }
+
+      addNotification(
+        `🏭 ${activeMinigame.farmType.name} placed successfully!`,
+        "farm",
+        3000
+      );
+    } else if (success) {
+      addNotification("✅ Minigame completed successfully!", "farm", 2000);
+    } else {
+      addNotification("❌ Minigame failed! Farm not placed.", "warning", 2000);
+    }
+
+    setActiveMinigame(null);
+    setFarmPlacement(null);
+  };
+
+  // Handle sprinkler minigame failure with external popup
+  const handleSprinklerFailure = (message) => {
+    setFailurePopup(message);
+    setTimeout(() => {
+      setFailurePopup(null);
+      setActiveMinigame(null);
+      setFarmPlacement(null);
+    }, 3000);
+  };
 
   const layout = getLayoutPositions();
 
   return (
     <div className="min-h-screen overflow-hidden no-select">
       {/* Notifications */}
-      <div className="fixed top-4 right-4 z-40 space-y-2">
-        {notifications.map((notif) => (
-          <div
-            key={notif.id}
-            className={`p-3 rounded-lg pixelated text-sm max-w-sm animate-fade-in ${
-              notif.type === "blame"
-                ? "bg-red-500 text-white"
-                : notif.type === "cultist"
-                ? "bg-purple-500 text-white"
-                : notif.type === "source"
-                ? "bg-green-500 text-white"
-                : notif.type === "growth"
-                ? "bg-blue-500 text-white"
-                : notif.type === "warning"
-                ? "bg-orange-500 text-white"
-                : "bg-gray-700 text-white"
-            }`}
-          >
-            {notif.message}
+      <Notifications notifications={notifications} />
+
+      {/* External Failure Popup for Sprinkler Minigame */}
+      {failurePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60]">
+          <div className="bg-red-500 text-white p-8 rounded-lg max-w-md mx-4 text-center animate-pulse border-4 border-red-300">
+            <div className="text-6xl mb-4">💀</div>
+            <h2 className="text-2xl font-bold mb-4 pixelated">
+              MINIGAME FAILED!
+            </h2>
+            <p className="text-lg mb-4 pixelated">{failurePopup}</p>
+            <p className="text-sm opacity-75">
+              Press ESC or wait to continue...
+            </p>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
       {/* NPC Animation Overlay */}
       {npcAnimation && (
@@ -861,42 +825,76 @@ function App() {
         </div>
       )}
 
-      {/* Header UI */}
-      <div className="fixed top-0 left-0 right-0 bg-gray-800 text-white p-3 z-30 h-16">
-        <div className="flex justify-between items-center pixelated">
-          <div className="flex space-x-6 text-sm">
-            <span>💰 Source: {Math.floor(source)}</span>
-            <span
-              className={`${
-                tps < 10
-                  ? "text-red-400"
-                  : tps < 15
-                  ? "text-yellow-400"
-                  : "text-green-400"
-              }`}
-            >
-              ⚡ TPS: {tps.toFixed(1)}/20
-            </span>
-            <span>🌵 Harvested: {totalCactiHarvested}</span>
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => setShowInventory(!showInventory)}
-              className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-xs"
-            >
-              🎒 Inventory
-            </button>
-            <button
-              onClick={() => setShowShop(!showShop)}
-              className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-xs"
-            >
-              🛒 Shop
-            </button>
-          </div>
+      {/* Minigame Modal */}
+      {activeMinigame && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          {activeMinigame.type === "mod_approval" && (
+            <ModApprovalMinigame onComplete={handleMinigameComplete} />
+          )}
+          {activeMinigame.type === "cactus_lottery" && (
+            <CactusLotteryMinigame onComplete={handleMinigameComplete} />
+          )}
+          {activeMinigame.type === "count_cactus" && (
+            <CountCactusMinigame onComplete={handleMinigameComplete} />
+          )}
+          {activeMinigame.type === "tech_calibration" && (
+            <TechCalibrationMinigame onComplete={handleMinigameComplete} />
+          )}
+          {activeMinigame.type === "sprinkler_puzzle" && (
+            <SprinklerPuzzleMinigame
+              onComplete={handleMinigameComplete}
+              onFailure={handleSprinklerFailure}
+            />
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Game World */}
+      {/* Header UI */}
+      <Header
+        source={source}
+        tps={tps}
+        totalCactiHarvested={totalCactiHarvested}
+        autoFarms={autoFarms}
+        showInventory={showInventory}
+        setShowInventory={setShowInventory}
+        showShop={showShop}
+        setShowShop={setShowShop}
+      />
+
+      {/* Shop Modal */}
+      <Shop
+        showShop={showShop}
+        setShowShop={setShowShop}
+        source={source}
+        purchaseItem={purchaseItem}
+        shopRef={shopRef}
+      />
+
+      {/* Inventory Modal */}
+      <Inventory
+        showInventory={showInventory}
+        setShowInventory={setShowInventory}
+        inventory={inventory}
+        inventoryRef={inventoryRef}
+        handleDragStart={handleDragStart}
+        handleDragEnd={handleDragEnd}
+        handleDragOver={handleDragOver}
+        handleDrop={handleDrop}
+      />
+
+      {/* Hotbar */}
+      <Hotbar
+        hotbar={hotbar}
+        selectedHotbarSlot={selectedHotbarSlot}
+        setSelectedHotbarSlot={setSelectedHotbarSlot}
+        hotbarRef={hotbarRef}
+        handleDragStart={handleDragStart}
+        handleDragEnd={handleDragEnd}
+        handleDragOver={handleDragOver}
+        handleDrop={handleDrop}
+      />
+
+      {/* Game World - Original from old App.js */}
       <div className="fixed top-16 left-0 right-0 bottom-20">
         {/* Sky Layer */}
         <div
@@ -935,7 +933,9 @@ function App() {
               return (
                 <div
                   key={blockX}
-                  className="absolute border-2 border-brown-400 border-opacity-50 farming-block cursor-pointer"
+                  className={`absolute border-2 border-brown-400 border-opacity-50 farming-block cursor-pointer transition-all duration-200 ${
+                    draggedItem ? "drop-zone" : ""
+                  }`}
                   style={{
                     left: worldX,
                     top: 0,
@@ -948,6 +948,10 @@ function App() {
                   }}
                   onClick={(event) =>
                     handleFarmingBlockClick(parseInt(blockX), event)
+                  }
+                  onDragOver={handleFarmingBlockDragOver}
+                  onDrop={(event) =>
+                    handleFarmingBlockDrop(event, parseInt(blockX))
                   }
                 />
               );
@@ -992,6 +996,30 @@ function App() {
                 </div>
               );
             })}
+
+            {/* Auto Farms */}
+            {autoFarms.map((farm) => {
+              const farmType = CONFIG.farmTypes.find(
+                (ft) => ft.id === farm.type
+              );
+              return (
+                <div
+                  key={farm.id}
+                  className="absolute"
+                  style={{
+                    left: farm.position.x,
+                    top: farm.position.y,
+                  }}
+                >
+                  <div className="text-6xl animate-pulse">
+                    {farmType?.icon || "🏭"}
+                  </div>
+                  <div className="text-xs bg-black text-white p-1 rounded mt-1">
+                    +{farmType?.production || 0}/tick
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1007,211 +1035,6 @@ function App() {
           }}
         />
       </div>
-
-      {/* Hotbar - always fully interactive */}
-      <div
-        ref={hotbarRef}
-        className="hotbar-container fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50"
-        style={{ userSelect: "none" }}
-      >
-        <div className="flex space-x-1 bg-gray-800 p-2 rounded-lg">
-          {hotbar.map((item, index) => (
-            <div
-              key={index}
-              className={`w-14 h-14 border-2 rounded cursor-pointer flex items-center justify-center text-lg relative ${
-                selectedHotbarSlot === index
-                  ? "border-yellow-400 bg-yellow-900"
-                  : "border-gray-600 bg-gray-700"
-              }`}
-              onClick={() => setSelectedHotbarSlot(index)}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, "hotbar", index)}
-            >
-              <span className="absolute -top-2 -left-1 text-xs text-gray-400">
-                {index + 1}
-              </span>
-              {item && (
-                <div
-                  className="relative"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item, "hotbar", index)}
-                  onDragEnd={handleDragEnd}
-                >
-                  <span>{item.icon}</span>
-                  {item.quantity > 1 && (
-                    <span className="absolute -bottom-1 -right-1 text-xs text-yellow-400">
-                      {item.quantity}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="text-center text-white text-xs pixelated mt-1">
-          Use arrow keys to scroll • 1-5 keys for hotbar • Drag items to
-          organize
-        </div>
-      </div>
-
-      {/* Inventory Modal */}
-      {showInventory && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
-          <div
-            ref={inventoryRef}
-            className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4"
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold pixelated">🎒 Inventory</h2>
-              <button
-                onClick={() => setShowInventory(false)}
-                className="text-2xl hover:text-red-500"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-8 gap-2">
-              {Array.from({ length: 24 }, (_, index) => {
-                const item = inventory[index];
-                return (
-                  <div
-                    key={index}
-                    className="w-16 h-16 border-2 border-gray-400 rounded bg-gray-100 flex items-center justify-center relative cursor-pointer hover:bg-gray-200"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, "inventory", index)}
-                  >
-                    {item && (
-                      <div
-                        className="relative"
-                        draggable
-                        onDragStart={(e) =>
-                          handleDragStart(e, item, "inventory", index)
-                        }
-                        onDragEnd={handleDragEnd}
-                      >
-                        <span className="text-2xl">{item.icon}</span>
-                        {item.quantity > 1 && (
-                          <span className="absolute -bottom-1 -right-1 text-xs bg-blue-500 text-white rounded px-1">
-                            {item.quantity}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Shop Modal */}
-      {showShop && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div
-            ref={shopRef}
-            className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-96 overflow-y-auto"
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold pixelated">🛒 Shop</h2>
-              <button
-                onClick={() => setShowShop(false)}
-                className="text-2xl hover:text-red-500"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Seeds */}
-              <div>
-                <h3 className="text-lg font-bold mb-2 pixelated">🌰 Seeds</h3>
-                {CONFIG.items.seeds.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => purchaseItem(item)}
-                    disabled={source < item.cost}
-                    className={`w-full mb-2 p-3 rounded border-2 text-sm ${
-                      source >= item.cost
-                        ? "bg-green-100 border-green-400 hover:bg-green-200"
-                        : "bg-gray-100 border-gray-400"
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-2">{item.icon}</span>
-                      <div className="text-left">
-                        <div className="font-bold">5x {item.name}</div>
-                        <div className="text-xs">💰 {item.cost} Source</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Wands */}
-              <div>
-                <h3 className="text-lg font-bold mb-2 pixelated">🪄 Wands</h3>
-                {CONFIG.items.wands
-                  .filter((w) => w.cost > 0)
-                  .map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => purchaseItem(item)}
-                      disabled={source < item.cost}
-                      className={`w-full mb-2 p-3 rounded border-2 text-sm ${
-                        source >= item.cost
-                          ? "bg-purple-100 border-purple-400 hover:bg-purple-200"
-                          : "bg-gray-100 border-gray-400"
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <span className="text-2xl mr-2">{item.icon}</span>
-                        <div className="text-left">
-                          <div className="font-bold">{item.name}</div>
-                          <div className="text-xs">
-                            Growth: {item.growthPower}x
-                          </div>
-                          <div className="text-xs">💰 {item.cost} Source</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-
-              {/* Hoes */}
-              <div>
-                <h3 className="text-lg font-bold mb-2 pixelated">🔧 Hoes</h3>
-                {CONFIG.items.hoes
-                  .filter((h) => h.cost > 0)
-                  .map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => purchaseItem(item)}
-                      disabled={source < item.cost}
-                      className={`w-full mb-2 p-3 rounded border-2 text-sm ${
-                        source >= item.cost
-                          ? "bg-brown-100 border-brown-400 hover:bg-brown-200"
-                          : "bg-gray-100 border-gray-400"
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <span className="text-2xl mr-2">{item.icon}</span>
-                        <div className="text-left">
-                          <div className="font-bold">{item.name}</div>
-                          <div className="text-xs">
-                            Harvest: {item.harvestPower}x
-                          </div>
-                          <div className="text-xs">💰 {item.cost} Source</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
